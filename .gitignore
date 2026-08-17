@@ -1,0 +1,37 @@
+# Secrets
+.env
+.env.local
+.env.*.local
+
+# Java / Maven
+target/
+*.class
+*.jar
+!**/.mvn/wrapper/maven-wrapper.jar
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+
+# Dev environments
+.idea/
+.vscode/
+*.iml
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
+logs/
+
+# Filled PDF test output contains medical answers from insureds - must never enter git under any circumstance
+out.pdf
+*_filled.pdf
+
+# LocalDiskLogoStorage target directory - uploaded logos are real agent data, not code
+backend/storage/logos/*
+!backend/storage/logos/.gitkeep
