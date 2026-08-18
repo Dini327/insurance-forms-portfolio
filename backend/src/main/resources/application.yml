@@ -1,0 +1,33 @@
+spring:
+  application:
+    name: insurance-forms-backend
+  datasource:
+    url: ${DATABASE_URL:jdbc:postgresql://localhost:5432/insurance_forms}
+    username: ${DB_USERNAME:insurance_forms}
+    password: ${DB_PASSWORD:insurance_forms}
+  jpa:
+    hibernate:
+      ddl-auto: none
+    open-in-view: false
+  flyway:
+    enabled: true
+  session:
+    jdbc:
+      initialize-schema: always
+    timeout: ${SESSION_TIMEOUT:8h}
+
+server:
+  port: ${SERVER_PORT:8080}
+  servlet:
+    session:
+      cookie:
+        secure: ${COOKIE_SECURE:false}
+        same-site: ${COOKIE_SAME_SITE:lax}
+
+app:
+  frontend-origin: ${FRONTEND_ORIGIN:http://localhost:3000}
+  admin-bootstrap-email: ${ADMIN_BOOTSTRAP_EMAIL:}
+  admin-bootstrap-password: ${ADMIN_BOOTSTRAP_PASSWORD:}
+
+logo:
+  storage-dir: ${LOGO_STORAGE_DIR:./storage/logos}
