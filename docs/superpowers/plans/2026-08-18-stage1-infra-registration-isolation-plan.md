@@ -525,7 +525,7 @@ git commit -m "feat: scaffold Vite React TypeScript frontend"
 **Interfaces:**
 - Produces: `agent` and `admin` tables exactly matching the spec's data model (Task 4's entities map onto these columns 1:1).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.insuranceforms;
@@ -582,12 +582,12 @@ class MigrationTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `mvn -f backend/pom.xml test -Dtest=MigrationTest`
 Expected: FAIL — no `agent`/`admin` tables exist, Flyway has nothing to run.
 
-- [ ] **Step 3: Write the migrations**
+- [x] **Step 3: Write the migrations**
 
 ```sql
 -- V1__enable_citext.sql
@@ -625,12 +625,12 @@ CREATE TABLE admin (
 );
 ```
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `mvn -f backend/pom.xml test -Dtest=MigrationTest`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/resources/db/migration backend/src/test/java/com/insuranceforms/MigrationTest.java
