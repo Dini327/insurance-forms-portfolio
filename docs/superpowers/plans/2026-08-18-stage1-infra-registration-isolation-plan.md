@@ -132,7 +132,7 @@ frontend/
 **Interfaces:**
 - Produces: `PostgresTestContainerConfig` — a `@TestConfiguration` importable by any later `@SpringBootTest`, providing a `PostgreSQLContainer` wired via `@ServiceConnection` so the datasource is configured automatically.
 
-- [ ] **Step 1: Write `pom.xml`**
+- [x] **Step 1: Write `pom.xml`**
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -230,7 +230,7 @@ frontend/
 </project>
 ```
 
-- [ ] **Step 2: Write `application.yml`**
+- [x] **Step 2: Write `application.yml`**
 
 ```yaml
 spring:
@@ -268,7 +268,7 @@ logo:
   storage-dir: ${LOGO_STORAGE_DIR:./storage/logos}
 ```
 
-- [ ] **Step 3: Write the application class**
+- [x] **Step 3: Write the application class**
 
 ```java
 package com.insuranceforms;
@@ -284,7 +284,7 @@ public class InsuranceFormsApplication {
 }
 ```
 
-- [ ] **Step 4: Write the shared Testcontainers config**
+- [x] **Step 4: Write the shared Testcontainers config**
 
 ```java
 package com.insuranceforms.support;
@@ -306,7 +306,7 @@ public class PostgresTestContainerConfig {
 }
 ```
 
-- [ ] **Step 5: Write the failing smoke test**
+- [x] **Step 5: Write the failing smoke test**
 
 ```java
 package com.insuranceforms;
@@ -330,12 +330,12 @@ class InsuranceFormsApplicationTests {
 
 There is nothing to implement yet — this step exists to confirm the project skeleton fails to *compile/run* before `pom.xml`/app class exist, per the TDD cycle. Since Steps 1–4 already created those files, this test should compile immediately; the "red" state you're verifying in Step 6 is "does the context actually start against a real Postgres container," not a missing class.
 
-- [ ] **Step 6: Run the test and verify it passes**
+- [x] **Step 6: Run the test and verify it passes**
 
 Run: `mvn -f backend/pom.xml test -Dtest=InsuranceFormsApplicationTests`
 Expected: PASS. Docker must be running locally for Testcontainers to start the `postgres:16` image — pinned to that exact tag (not `latest`, not `-alpine`) so it reuses the image already pulled locally instead of triggering a new network pull.
 
-- [ ] **Step 7: Add backend build output to `.gitignore` and commit**
+- [x] **Step 7: Add backend build output to `.gitignore` and commit**
 
 ```bash
 git add backend/pom.xml backend/src .gitignore
@@ -358,7 +358,7 @@ git commit -m "feat: scaffold Spring Boot backend with Testcontainers smoke test
 **Interfaces:**
 - Produces: `App` component rendering the Hebrew app title, to be extended with routing in Task 15.
 
-- [ ] **Step 1: Write `package.json`**
+- [x] **Step 1: Write `package.json`**
 
 ```json
 {
@@ -391,7 +391,7 @@ git commit -m "feat: scaffold Spring Boot backend with Testcontainers smoke test
 }
 ```
 
-- [ ] **Step 2: Write `vite.config.ts`, with a dev proxy to the backend**
+- [x] **Step 2: Write `vite.config.ts`, with a dev proxy to the backend**
 
 The proxy keeps the browser talking only to `localhost:3000` in dev, so the session cookie and CSRF cookie stay same-site with no CORS involved — matching `FRONTEND_ORIGIN=http://localhost:3000`'s default in `application.yml`.
 
@@ -415,7 +415,7 @@ export default defineConfig({
 })
 ```
 
-- [ ] **Step 3: Write `tsconfig.json`**
+- [x] **Step 3: Write `tsconfig.json`**
 
 ```json
 {
@@ -436,7 +436,7 @@ export default defineConfig({
 }
 ```
 
-- [ ] **Step 4: Write `index.html` (Hebrew, RTL)**
+- [x] **Step 4: Write `index.html` (Hebrew, RTL)**
 
 ```html
 <!doctype html>
@@ -452,7 +452,7 @@ export default defineConfig({
 </html>
 ```
 
-- [ ] **Step 5: Write `src/main.tsx`**
+- [x] **Step 5: Write `src/main.tsx`**
 
 ```tsx
 import React from 'react'
@@ -466,7 +466,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 )
 ```
 
-- [ ] **Step 6: Write the failing test**
+- [x] **Step 6: Write the failing test**
 
 ```tsx
 import { render, screen } from '@testing-library/react'
@@ -481,13 +481,13 @@ describe('App', () => {
 })
 ```
 
-- [ ] **Step 7: Install dependencies and run the test to verify it fails**
+- [x] **Step 7: Install dependencies and run the test to verify it fails**
 
 Run: `npm --prefix frontend install`
 Run: `npm --prefix frontend test`
 Expected: FAIL — `App.tsx` does not exist yet.
 
-- [ ] **Step 8: Write the minimal `App.tsx`**
+- [x] **Step 8: Write the minimal `App.tsx`**
 
 ```tsx
 export default function App() {
@@ -495,17 +495,17 @@ export default function App() {
 }
 ```
 
-- [ ] **Step 9: Run the test to verify it passes**
+- [x] **Step 9: Run the test to verify it passes**
 
 Run: `npm --prefix frontend test`
 Expected: PASS
 
-- [ ] **Step 10: Verify the dev server boots**
+- [x] **Step 10: Verify the dev server boots**
 
 Run: `npm --prefix frontend run build`
 Expected: exits 0 with no TypeScript errors.
 
-- [ ] **Step 11: Commit**
+- [x] **Step 11: Commit**
 
 ```bash
 git add frontend/package.json frontend/vite.config.ts frontend/tsconfig.json frontend/index.html frontend/src
