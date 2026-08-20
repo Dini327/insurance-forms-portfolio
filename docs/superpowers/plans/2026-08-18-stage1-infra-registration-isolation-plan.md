@@ -653,7 +653,11 @@ git commit -m "feat: add agent and admin table migrations with citext email"
 - Consumes: `agent`/`admin` tables from Task 3.
 - Produces: `Agent(fullName, email, passwordHash, israeliId, agencyName, mobile, agentNumber)` constructor; `AgentRepository.findByEmail/existsByEmail/existsByAgentNumber`; `Admin(fullName, email, passwordHash)` constructor; `AdminRepository.findByEmail`. Every later task that touches these tables goes through these repositories only.
 
-- [ ] **Step 1: Write the failing repository tests**
+- [x] **Step 1: Write the failing repository tests**
+
+> **Deviation note:** the `AutoConfigureTestDatabase` import shown below (`org.springframework.boot.test.autoconfigure.orm.jpa`) is wrong — the class actually lives in `org.springframework.boot.test.autoconfigure.jdbc` (verified against the jar contents). Fixed in the actual test files.
+>
+> **Deviation note 2:** the derived `findByEmail`/`existsByEmail` queries shown below do not actually achieve case-insensitive matching in practice. PostgreSQL's `citext` case-insensitivity applies only to untyped literals; Hibernate binds `String` parameters as typed `varchar`, which resolves the `=` operator to plain case-sensitive text equality. Verified against a real Postgres container. Fixed by rewriting both methods as `@Query`s using `LOWER(...) = LOWER(...)` instead of relying on derived-query citext behavior.
 
 ```java
 package com.insuranceforms.agent;
@@ -731,12 +735,12 @@ class AdminRepositoryTest {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AgentRepositoryTest,AdminRepositoryTest`
 Expected: FAIL — compile error, `Agent`/`Admin`/repositories don't exist yet.
 
-- [ ] **Step 3: Write `Agent.java`**
+- [x] **Step 3: Write `Agent.java`**
 
 ```java
 package com.insuranceforms.agent;
@@ -830,7 +834,7 @@ public class Agent {
 }
 ```
 
-- [ ] **Step 4: Write `AgentRepository.java`**
+- [x] **Step 4: Write `AgentRepository.java`** (implemented with `@Query`/`LOWER()`, see deviation note above)
 
 ```java
 package com.insuranceforms.agent;
@@ -847,7 +851,7 @@ public interface AgentRepository extends JpaRepository<Agent, UUID> {
 }
 ```
 
-- [ ] **Step 5: Write `Admin.java`**
+- [x] **Step 5: Write `Admin.java`**
 
 ```java
 package com.insuranceforms.admin;
@@ -903,7 +907,7 @@ public class Admin {
 }
 ```
 
-- [ ] **Step 6: Write `AdminRepository.java`**
+- [x] **Step 6: Write `AdminRepository.java`** (implemented with `@Query`/`LOWER()`, see deviation note above)
 
 ```java
 package com.insuranceforms.admin;
@@ -918,12 +922,12 @@ public interface AdminRepository extends JpaRepository<Admin, UUID> {
 }
 ```
 
-- [ ] **Step 7: Run the tests and verify they pass**
+- [x] **Step 7: Run the tests and verify they pass**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AgentRepositoryTest,AdminRepositoryTest`
 Expected: PASS
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/src/main/java/com/insuranceforms/agent backend/src/main/java/com/insuranceforms/admin backend/src/test/java/com/insuranceforms/agent backend/src/test/java/com/insuranceforms/admin
