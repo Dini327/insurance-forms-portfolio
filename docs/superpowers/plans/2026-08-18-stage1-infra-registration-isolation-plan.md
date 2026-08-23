@@ -1037,6 +1037,7 @@ git commit -m "feat: add Israeli ID check-digit validator"
 - Create: `backend/src/main/java/com/insuranceforms/agent/AgentRegistrationService.java`
 - Create: `backend/src/main/java/com/insuranceforms/agent/AgentRegistrationController.java`
 - Create: `backend/src/main/java/com/insuranceforms/web/GlobalExceptionHandler.java`
+- Create (pulled forward from Task 7, temporary): `backend/src/main/java/com/insuranceforms/security/SecurityConfig.java`
 - Test: `backend/src/test/java/com/insuranceforms/agent/AgentRegistrationTest.java`
 
 **Interfaces:**
@@ -1044,7 +1045,9 @@ git commit -m "feat: add Israeli ID check-digit validator"
 - Produces: `POST /api/auth/agent/register` — 201 with `AgentProfileResponse` on success, 400 `{"errors": {field: message}}` on validation failure. `AgentProfileResponse.from(Agent)` static factory, reused by Task 8's account endpoints.
 - Note: this test runs `@SpringBootTest` with the full context but **without** the security filter chain (Task 7 doesn't exist yet) — Spring Security's autoconfiguration defaults to permit-all when no `SecurityFilterChain` bean is defined, so registration is reachable unauthenticated here as expected for this endpoint.
 
-- [ ] **Step 1: Write the failing test**
+> **Deviation note:** the assumption above is wrong. Verified against the real behavior: once `spring-boot-starter-security` is on the classpath (added in Task 1) and no `SecurityFilterChain` bean exists, Spring Boot's `SecurityAutoConfiguration` secures **every** endpoint by default (generated in-memory user, all requests need authentication) — it does not default to permit-all. Running Step 2 confirmed this: all 5 requests returned 401 Unauthorized instead of 404/400. Fixed by pulling a minimal `SecurityConfig.java` forward from Task 7 (see Step 3.5 below) that permits `/api/auth/**` unauthenticated and requires authentication for everything else, plus the `PasswordEncoder` bean `AgentRegistrationService` needs. Task 7 replaces this file with its full two-chain version (the `passwordEncoder()` bean is written identically there, so no rework). Files list above updated to record this.
+
+- [x] **Step 1: Write the failing test**
 
 ```java
 package com.insuranceforms.agent;
@@ -1141,12 +1144,14 @@ class AgentRegistrationTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AgentRegistrationTest`
 Expected: FAIL — no registration endpoint exists yet (404/compile errors).
 
-- [ ] **Step 3: Write `RegisterAgentRequest.java`**
+Actual: FAILED as expected, but with 401 Unauthorized on all 5 requests rather than 404/compile errors — see the deviation note above.
+
+- [x] **Step 3: Write `RegisterAgentRequest.java`**
 
 ```java
 package com.insuranceforms.agent.dto;
@@ -1167,7 +1172,7 @@ public record RegisterAgentRequest(
 }
 ```
 
-- [ ] **Step 4: Write `AgentProfileResponse.java`**
+- [x] **Step 4: Write `AgentProfileResponse.java`**
 
 ```java
 package com.insuranceforms.agent.dto;
@@ -1188,7 +1193,7 @@ public record AgentProfileResponse(
 }
 ```
 
-- [ ] **Step 5: Write `RegistrationException.java`**
+- [x] **Step 5: Write `RegistrationException.java`**
 
 ```java
 package com.insuranceforms.agent;
@@ -1210,7 +1215,7 @@ public class RegistrationException extends RuntimeException {
 }
 ```
 
-- [ ] **Step 6: Write `AgentRegistrationService.java`**
+- [x] **Step 6: Write `AgentRegistrationService.java`**
 
 ```java
 package com.insuranceforms.agent;
@@ -1263,7 +1268,7 @@ public class AgentRegistrationService {
 }
 ```
 
-- [ ] **Step 7: Write `AgentRegistrationController.java`**
+- [x] **Step 7: Write `AgentRegistrationController.java`**
 
 ```java
 package com.insuranceforms.agent;
@@ -1296,7 +1301,7 @@ public class AgentRegistrationController {
 }
 ```
 
-- [ ] **Step 8: Write `GlobalExceptionHandler.java`**
+- [x] **Step 8: Write `GlobalExceptionHandler.java`**
 
 ```java
 package com.insuranceforms.web;
@@ -1328,15 +1333,52 @@ public class GlobalExceptionHandler {
 }
 ```
 
-- [ ] **Step 9: Run the test and verify it passes**
+- [x] **Step 8.5 (added, deviation): Write a temporary minimal `SecurityConfig.java`**
+
+Pulled forward from Task 7 to fix the 401s found in Step 2. Permits `/api/auth/**` unauthenticated, requires authentication elsewhere, and defines the `PasswordEncoder` bean `AgentRegistrationService` needs. Task 7 replaces this file with its full version.
+
+```java
+package com.insuranceforms.security;
+
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.security.config.annotation.web.builders.HttpSecurity;
+import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.SecurityFilterChain;
+
+@Configuration
+@EnableWebSecurity
+public class SecurityConfig {
+
+    @Bean
+    public PasswordEncoder passwordEncoder() {
+        return new BCryptPasswordEncoder();
+    }
+
+    @Bean
+    public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+        http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/auth/**"))
+                .authorizeHttpRequests(auth -> auth
+                        .requestMatchers("/api/auth/**").permitAll()
+                        .anyRequest().authenticated());
+        return http.build();
+    }
+}
+```
+
+- [x] **Step 9: Run the test and verify it passes**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AgentRegistrationTest`
 Expected: PASS
 
-- [ ] **Step 10: Commit**
+Actual: PASS — 5/5. Also reran the full suite (`mvn -f backend/pom.xml test`): 16/16 passing, no regressions from the temporary `SecurityConfig`.
+
+- [x] **Step 10: Commit**
 
 ```bash
-git add backend/src/main/java/com/insuranceforms/agent backend/src/main/java/com/insuranceforms/web backend/src/test/java/com/insuranceforms/agent/AgentRegistrationTest.java
+git add backend/src/main/java/com/insuranceforms/agent backend/src/main/java/com/insuranceforms/web backend/src/main/java/com/insuranceforms/security backend/src/test/java/com/insuranceforms/agent/AgentRegistrationTest.java
 git commit -m "feat: add agent self-registration endpoint with validation"
 ```
 
