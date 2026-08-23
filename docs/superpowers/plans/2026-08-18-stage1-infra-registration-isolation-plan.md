@@ -947,7 +947,7 @@ git commit -m "feat: add Agent and Admin JPA entities and repositories"
 
 This is a pure unit test — no Spring context, no database, so it runs instantly and is the fastest possible feedback loop in this stage.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `"123456782"` is derived, not guessed: applying the standard alternating-weight (1,2,1,2,…) algorithm to the 8-digit prefix `12345678` requires a check digit of `2` to make the weighted sum a multiple of 10 — see the algorithm in Step 3.
 
@@ -982,12 +982,12 @@ class IsraeliIdValidatorTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `mvn -f backend/pom.xml test -Dtest=IsraeliIdValidatorTest`
 Expected: FAIL — `IsraeliIdValidator` does not exist yet.
 
-- [ ] **Step 3: Write the validator**
+- [x] **Step 3: Write the validator**
 
 ```java
 package com.insuranceforms.validation;
@@ -1014,12 +1014,12 @@ public final class IsraeliIdValidator {
 }
 ```
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `mvn -f backend/pom.xml test -Dtest=IsraeliIdValidatorTest`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/java/com/insuranceforms/validation backend/src/test/java/com/insuranceforms/validation
