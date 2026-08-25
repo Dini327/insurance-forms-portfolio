@@ -17,6 +17,7 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
 import java.util.Map;
+import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -48,8 +49,8 @@ class AgentDeactivationServiceTest {
 
         String csrfToken = fetchCsrfToken();
         // Two independent logins simulate the agent being signed in from two browsers.
-        String sessionCookieBrowserOne = loginAndGetSessionCookie(csrfToken);
-        String sessionCookieBrowserTwo = loginAndGetSessionCookie(csrfToken);
+        String sessionCookieBrowserOne = loginAndGetSessionCookie(csrfToken, "revoke@example.com");
+        String sessionCookieBrowserTwo = loginAndGetSessionCookie(csrfToken, "revoke@example.com");
         assertThat(sessionCookieBrowserOne).isNotEqualTo(sessionCookieBrowserTwo);
 
         deactivationService.deactivate(agent.getId());
@@ -58,12 +59,34 @@ class AgentDeactivationServiceTest {
         assertSessionRejected(sessionCookieBrowserTwo);
     }
 
-    private String loginAndGetSessionCookie(String csrfToken) {
+    // The other half of the isolation guarantee: deactivating one agent must not touch
+    // another agent's session. If findByPrincipalName's scoping were ever loosened (or
+    // swapped for something that deletes broadly), this is the only test that would
+    // catch it -- the test above only proves agent A's own sessions die, never that a
+    // stranger's session survives.
+    @Test
+    void deactivationDoesNotRevokeAnotherAgentsSessions() {
+        Agent agentA = agentRepository.save(new Agent("Agent A", "revoke-a@example.com",
+                encoder.encode("correct-horse-battery"), "123456782", "Agency A", "0501111111", "AG-4002"));
+        Agent agentB = agentRepository.save(new Agent("Agent B", "revoke-b@example.com",
+                encoder.encode("correct-horse-battery"), "123456782", "Agency B", "0502222222", "AG-4003"));
+
+        String csrfToken = fetchCsrfToken();
+        String sessionCookieA = loginAndGetSessionCookie(csrfToken, "revoke-a@example.com");
+        String sessionCookieB = loginAndGetSessionCookie(csrfToken, "revoke-b@example.com");
+
+        deactivationService.deactivate(agentA.getId());
+
+        assertSessionRejected(sessionCookieA);
+        assertSessionStillWorksAs(sessionCookieB, agentB.getId());
+    }
+
+    private String loginAndGetSessionCookie(String csrfToken, String email) {
         HttpHeaders loginHeaders = new HttpHeaders();
         loginHeaders.add(HttpHeaders.COOKIE, "XSRF-TOKEN=" + csrfToken);
         loginHeaders.add("X-XSRF-TOKEN", csrfToken);
         ResponseEntity<Map> loginResponse = restTemplate.exchange("/api/auth/agent/login", HttpMethod.POST,
-                new HttpEntity<>(Map.of("email", "revoke@example.com", "password", "correct-horse-battery"), loginHeaders),
+                new HttpEntity<>(Map.of("email", email, "password", "correct-horse-battery"), loginHeaders),
                 Map.class);
         assertThat(loginResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         return extractCookie(loginResponse, "SESSION");
@@ -75,6 +98,15 @@ class AgentDeactivationServiceTest {
         ResponseEntity<Map> response = restTemplate.exchange("/api/agent/me", HttpMethod.GET,
                 new HttpEntity<>(headers), Map.class);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.UNAUTHORIZED);
+    }
+
+    private void assertSessionStillWorksAs(String sessionCookie, UUID expectedAgentId) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.COOKIE, "SESSION=" + sessionCookie);
+        ResponseEntity<Map> response = restTemplate.exchange("/api/agent/me", HttpMethod.GET,
+                new HttpEntity<>(headers), Map.class);
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+        assertThat(response.getBody().get("id")).isEqualTo(expectedAgentId.toString());
     }
 
     private String fetchCsrfToken() {

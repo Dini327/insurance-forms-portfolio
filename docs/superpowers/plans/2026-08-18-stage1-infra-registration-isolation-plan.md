@@ -2395,6 +2395,8 @@ Expected: PASS
 
 Actual: PASS, log line confirms `Revoked 2 active session(s) for deactivated agent ...`. Full suite (`mvn -f backend/pom.xml test`) re-run: 25/25 pass.
 
+> **Follow-up, requested in review before moving to Task 10 — the other half of the isolation guarantee:** the test above proves agent A's own sessions all die; it does not prove a *different* agent's session survives A's deactivation, which is the failure mode this project is most sensitive to (per `CLAUDE.md`'s tenant-isolation rules). Added `deactivationDoesNotRevokeAnotherAgentsSessions`: agents A and B each log in, only A is deactivated, A's cookie is asserted `401` and B's cookie is asserted `200` *with B's own id in the response body* (not just "some 200", mirroring Task 8's isolation-proof pattern). Passed immediately against the existing `findByPrincipalName(agent.getEmail())` scoping — expected, since that was already correctly scoped. Verified non-vacuously with the same negative-control technique as the RED-for-the-right-reason check above: temporarily wired a `JdbcTemplate` into `AgentDeactivationService` and added `jdbcTemplate.update("DELETE FROM spring_session")` after the real revocation, simulating a future bug where the deletion scope gets loosened. Reran just the new test: failed with `expected: 200 OK but was: 401 UNAUTHORIZED` — B's still-valid session was wrongly killed, exactly the regression this test exists to catch. Reverted the diagnostic immediately after. Full suite re-run: 26/26 pass.
+
 - [x] **Step 5: Commit**
 
 ```bash
