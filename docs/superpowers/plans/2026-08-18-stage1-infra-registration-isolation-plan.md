@@ -1405,7 +1405,7 @@ This is the largest task in the plan: it wires `AgentPrincipal`/`AdminPrincipal`
 - Consumes: `AgentRepository`, `AdminRepository` (Task 4).
 - Produces: `AgentPrincipal.getAgentId(): UUID` (consumed by Task 8's `@AuthenticationPrincipal AgentPrincipal`, Task 14's logo upload); `POST /api/auth/agent/login`, `POST /api/auth/admin/login`; `GET /api/csrf-token`; the two `SecurityFilterChain`s that every later task's `/api/agent/**` and `/api/admin/**` endpoints rely on for role enforcement.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```java
 package com.insuranceforms.security;
@@ -1553,12 +1553,14 @@ class CsrfTest {
 }
 ```
 
-- [ ] **Step 2: Run the tests and verify they fail**
+- [x] **Step 2: Run the tests and verify they fail**
 
 Run: `mvn -f backend/pom.xml test -Dtest=LoginTest,CsrfTest`
 Expected: FAIL — no login endpoints or CSRF wiring exist yet; Spring Security's default autoconfiguration currently blocks everything behind HTTP Basic.
 
-- [ ] **Step 3: Write `AgentPrincipal.java`**
+Actual: FAILED as expected (403/null-cookie under Task 6's temporary permit-all SecurityConfig).
+
+- [x] **Step 3: Write `AgentPrincipal.java`**
 
 ```java
 package com.insuranceforms.agent;
@@ -1619,7 +1621,7 @@ public class AgentPrincipal implements UserDetails {
 }
 ```
 
-- [ ] **Step 4: Write `AgentUserDetailsService.java`**
+- [x] **Step 4: Write `AgentUserDetailsService.java`**
 
 ```java
 package com.insuranceforms.agent;
@@ -1647,7 +1649,7 @@ public class AgentUserDetailsService implements UserDetailsService {
 }
 ```
 
-- [ ] **Step 5: Write `AdminPrincipal.java` and `AdminUserDetailsService.java`**
+- [x] **Step 5: Write `AdminPrincipal.java` and `AdminUserDetailsService.java`**
 
 ```java
 package com.insuranceforms.admin;
@@ -1734,7 +1736,7 @@ public class AdminUserDetailsService implements UserDetailsService {
 }
 ```
 
-- [ ] **Step 6: Write `JsonAuthenticationFilter.java`**
+- [x] **Step 6: Write `JsonAuthenticationFilter.java`**
 
 ```java
 package com.insuranceforms.security;
@@ -1780,7 +1782,7 @@ public class JsonAuthenticationFilter extends UsernamePasswordAuthenticationFilt
 }
 ```
 
-- [ ] **Step 7: Write `JsonLoginSuccessHandler.java` and `JsonLoginFailureHandler.java`**
+- [x] **Step 7: Write `JsonLoginSuccessHandler.java` and `JsonLoginFailureHandler.java`**
 
 ```java
 package com.insuranceforms.security;
@@ -1844,7 +1846,7 @@ public class JsonLoginFailureHandler implements AuthenticationFailureHandler {
 }
 ```
 
-- [ ] **Step 8: Write `CsrfController.java`**
+- [x] **Step 8: Write `CsrfController.java`**
 
 Injecting `CsrfToken` as a controller parameter forces Spring Security's deferred token to materialize and be written as a cookie — without this, `CsrfFilter`'s lazy token never gets saved and no `Set-Cookie` header is sent.
 
@@ -1865,7 +1867,7 @@ public class CsrfController {
 }
 ```
 
-- [ ] **Step 9: Write `SecurityConfig.java`**
+- [x] **Step 9: Write `SecurityConfig.java`**
 
 ```java
 package com.insuranceforms.security;
@@ -1997,15 +1999,30 @@ public class SecurityConfig {
 }
 ```
 
-- [ ] **Step 10: Run the tests and verify they pass**
+> **Deviation note — two real bugs found by actually running the tests, both fixed in production code, not by weakening a test:**
+>
+> 1. **`publicChain` as shown above disables CSRF for both `/logos/**` and `/api/csrf-token` together.** That's correct for `/logos/**` but wrong for `/api/csrf-token` — with CSRF disabled, no `CsrfFilter` runs on that path at all, so the endpoint whose entire job is "hand out a CSRF token" never generates or saves one. `GET /api/csrf-token` came back with no `Set-Cookie` header. Fixed by splitting into two chains: `logoChain` (`/logos/**`, CSRF disabled, unchanged) and a new `csrfBootstrapChain` (`/api/csrf-token` only, CSRF **active** via `CookieCsrfTokenRepository.withHttpOnlyFalse()`, `permitAll()` — safe because GET is CSRF-exempt by method, so this stays open while still running the filter that materializes the token).
+> 2. **After fix 1, the token was issued correctly, but submitting it back on a POST still failed CSRF (403).** Root cause: Spring Security 6.1+'s default `CsrfTokenRequestHandler` is `XorCsrfTokenRequestAttributeHandler`, which BREACH-protects the token by XOR-masking it — incompatible with the plain "read the cookie, echo it in a header" pattern this app's cookie-based SPA flow uses. Fixed by explicitly setting `.csrfTokenRequestHandler(new CsrfTokenRequestAttributeHandler())` on `agentChain`, `adminChain`, and `csrfBootstrapChain`'s `.csrf(...)` config — this is the officially documented Spring Security setting for cookie-based CSRF with SPA frontends.
+>
+> Verified via a temporary diagnostic (logged raw status+body through a non-buggy HTTP client, see Step 10's note) that `postWithFetchedCsrfCookieAndHeaderIsAccepted` legitimately gets 401 `{"error":"Invalid credentials"}` for its nonexistent test user — proving the request passed CSRF and reached real authentication, exactly as the test's own comment says. The diagnostic code was removed after use.
+
+- [x] **Step 10: Run the tests and verify they pass**
 
 Run: `mvn -f backend/pom.xml test -Dtest=LoginTest,CsrfTest`
 Expected: PASS. If `CsrfTest.postWithoutCsrfCookieIsRejected` instead returns 401, the CSRF filter isn't actually rejecting the request before authentication runs — double check `agentChain`'s CSRF config is active (this is the exact class of bug the spec's testing plan calls out: "proving the mechanism is actually wired end-to-end, not just believed to be configured").
 
-- [ ] **Step 11: Commit**
+Actual: PASS, 2/2 — but only after a third, unrelated bug surfaced and was fixed. `postWithFetchedCsrfCookieAndHeaderIsAccepted` crashed the test client with `java.net.HttpRetryException: cannot retry due to server authentication, in streaming mode`. Root cause: `TestRestTemplate`'s default HTTP client (`java.net.HttpURLConnection`) unconditionally attempts its own authentication-retry handling on *any* 401 response to a streamed POST, and fails because the request body was already sent and can't be replayed — a long-standing JDK limitation, not a bug in this app's security code. Confirmed by temporarily swapping in `JdkClientHttpRequestFactory` (part of Spring, no new dependency) for one diagnostic call: the real response underneath was `401 {"error":"Invalid credentials"}`, exactly as intended. Fixed permanently by adding `backend/src/test/java/com/insuranceforms/support/JdkClientTestConfig.java` (a shared `@TestConfiguration` providing a `RestTemplateBuilder` bean that uses `JdkClientHttpRequestFactory`), imported alongside `PostgresTestContainerConfig` in every test that asserts a 4xx status on a POST/PATCH — currently `CsrfTest` and `LoginTest`.
+
+Also, wiring the real `SecurityConfig` (which enforces CSRF on `/api/auth/agent/**` with no exemptions) broke Task 6's `AgentRegistrationTest`, which posted without a CSRF token — exactly the risk flagged when that temporary config was written. Fixed within this task, not deferred: `AgentRegistrationTest` now fetches a CSRF token before each POST, same pattern as `CsrfTest`/`LoginTest`. All 5 of its assertions (status codes, field-specific error keys, DB existence checks) are unchanged — see the diff reviewed and confirmed in-conversation.
+
+Separately, to actually run the app locally for manual verification (per CLAUDE.md: never claim something works without verifying it the way it's actually used), `application.yml`'s datasource block was hardened per the user's request: `DATABASE_URL`/`DB_USERNAME`/`DB_PASSWORD` now have **no default at all** (previously defaulted to real-looking credentials `insurance_forms`/`insurance_forms`), so a missing env var fails loudly at startup instead of silently trying a real-looking value. All other env vars (`SERVER_PORT`, `SESSION_TIMEOUT`, `COOKIE_SECURE`, `COOKIE_SAME_SITE`, `FRONTEND_ORIGIN`, `LOGO_STORAGE_DIR`) already had non-secret local defaults and were left untouched. `.env.example` was created early (originally a Task 10 deliverable) listing every env var name with no values.
+
+**Manual end-to-end verification (per CLAUDE.md, not just automated tests):** the user ran the actual server locally and confirmed via curl: `GET /api/csrf-token` → 200 + `Set-Cookie: XSRF-TOKEN=...`; POSTing `/api/auth/agent/login` with that exact token as both cookie and `X-XSRF-TOKEN` header → 401 `{"error":"Invalid credentials"}` (nonexistent user, proves CSRF passed and real auth ran); the same POST with no token at all → 403. The 401-vs-403 contrast proves CSRF is actually gating the request, not passing everything through. A successful login (valid credentials → 200 + session cookie) is covered by the automated `LoginTest.agentLogsInWithValidCredentials`, which exercises a real running Spring Boot instance via `TestRestTemplate` against a real Postgres (Testcontainers) — equivalent in kind to a live curl call.
+
+- [x] **Step 11: Commit**
 
 ```bash
-git add backend/src/main/java/com/insuranceforms/security backend/src/main/java/com/insuranceforms/agent/AgentPrincipal.java backend/src/main/java/com/insuranceforms/agent/AgentUserDetailsService.java backend/src/main/java/com/insuranceforms/admin/AdminPrincipal.java backend/src/main/java/com/insuranceforms/admin/AdminUserDetailsService.java backend/src/test/java/com/insuranceforms/security
+git add backend/src/main/java/com/insuranceforms/security backend/src/main/java/com/insuranceforms/agent/AgentPrincipal.java backend/src/main/java/com/insuranceforms/agent/AgentUserDetailsService.java backend/src/main/java/com/insuranceforms/admin/AdminPrincipal.java backend/src/main/java/com/insuranceforms/admin/AdminUserDetailsService.java backend/src/main/resources/application.yml backend/src/test/java/com/insuranceforms/security backend/src/test/java/com/insuranceforms/support/JdkClientTestConfig.java backend/src/test/java/com/insuranceforms/agent/AgentRegistrationTest.java .env.example
 git commit -m "feat: add two-role session auth with JSON login and CSRF"
 ```
 

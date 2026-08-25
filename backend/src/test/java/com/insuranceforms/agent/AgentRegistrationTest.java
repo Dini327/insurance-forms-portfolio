@@ -6,6 +6,9 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -37,10 +40,24 @@ class AgentRegistrationTest {
                 "agentNumber", agentNumber);
     }
 
+    private ResponseEntity<Map> postRegister(Map<String, Object> payload) {
+        String csrfToken = fetchCsrfToken();
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.COOKIE, "XSRF-TOKEN=" + csrfToken);
+        headers.add("X-XSRF-TOKEN", csrfToken);
+        return restTemplate.exchange("/api/auth/agent/register", HttpMethod.POST,
+                new HttpEntity<>(payload, headers), Map.class);
+    }
+
+    private String fetchCsrfToken() {
+        ResponseEntity<Void> bootstrap = restTemplate.getForEntity("/api/csrf-token", Void.class);
+        String setCookie = bootstrap.getHeaders().getFirst(HttpHeaders.SET_COOKIE);
+        return setCookie.split("XSRF-TOKEN=")[1].split(";")[0];
+    }
+
     @Test
     void registersWithValidData() {
-        ResponseEntity<Map> response = restTemplate.postForEntity(
-                "/api/auth/agent/register", validPayload("ruth1@example.com", "AG-2001"), Map.class);
+        ResponseEntity<Map> response = postRegister(validPayload("ruth1@example.com", "AG-2001"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CREATED);
         assertThat(agentRepository.existsByEmail("ruth1@example.com")).isTrue();
@@ -48,10 +65,9 @@ class AgentRegistrationTest {
 
     @Test
     void rejectsDuplicateEmailCaseInsensitively() {
-        restTemplate.postForEntity("/api/auth/agent/register", validPayload("dup@example.com", "AG-2002"), Map.class);
+        postRegister(validPayload("dup@example.com", "AG-2002"));
 
-        ResponseEntity<Map> response = restTemplate.postForEntity(
-                "/api/auth/agent/register", validPayload("DUP@example.com", "AG-2003"), Map.class);
+        ResponseEntity<Map> response = postRegister(validPayload("DUP@example.com", "AG-2003"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat((Map<String, Object>) response.getBody().get("errors")).containsKey("email");
@@ -59,10 +75,9 @@ class AgentRegistrationTest {
 
     @Test
     void rejectsDuplicateAgentNumber() {
-        restTemplate.postForEntity("/api/auth/agent/register", validPayload("first@example.com", "AG-2004"), Map.class);
+        postRegister(validPayload("first@example.com", "AG-2004"));
 
-        ResponseEntity<Map> response = restTemplate.postForEntity(
-                "/api/auth/agent/register", validPayload("second@example.com", "AG-2004"), Map.class);
+        ResponseEntity<Map> response = postRegister(validPayload("second@example.com", "AG-2004"));
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat((Map<String, Object>) response.getBody().get("errors")).containsKey("agentNumber");
@@ -73,7 +88,7 @@ class AgentRegistrationTest {
         Map<String, Object> payload = new java.util.HashMap<>(validPayload("badid@example.com", "AG-2005"));
         payload.put("israeliId", "123456783");
 
-        ResponseEntity<Map> response = restTemplate.postForEntity("/api/auth/agent/register", payload, Map.class);
+        ResponseEntity<Map> response = postRegister(payload);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat((Map<String, Object>) response.getBody().get("errors")).containsKey("israeliId");
@@ -84,7 +99,7 @@ class AgentRegistrationTest {
         Map<String, Object> payload = new java.util.HashMap<>(validPayload("shortpw@example.com", "AG-2006"));
         payload.put("password", "short1");
 
-        ResponseEntity<Map> response = restTemplate.postForEntity("/api/auth/agent/register", payload, Map.class);
+        ResponseEntity<Map> response = postRegister(payload);
 
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
         assertThat((Map<String, Object>) response.getBody().get("errors")).containsKey("password");
