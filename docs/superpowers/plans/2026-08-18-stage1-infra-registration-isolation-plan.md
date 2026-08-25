@@ -2246,9 +2246,15 @@ git commit -m "feat: add agent account endpoints proving tenant isolation from s
 - Consumes: `AgentRepository` (Task 4), Spring Session's `FindByIndexNameSessionRepository` (auto-configured by `spring-session-jdbc`), `GET /api/agent/me` (Task 8) as the endpoint the test uses to prove a revoked session is rejected.
 - Produces: `AgentDeactivationService.deactivate(UUID agentId)` — sets `is_active = false` and deletes every stored session indexed under that agent's email. No HTTP endpoint yet (an admin-facing deactivation endpoint is out of scope for this stage per the spec); the test calls the service bean directly, matching how the spec's testing plan describes this scenario.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 This test needs a real HTTP round-trip to obtain a session cookie (a `TestRestTemplate` login), then calls `AgentDeactivationService` directly, then re-uses the captured cookie to prove the session is gone.
+
+> **Deviation note — three refinements made before writing any code, per review:**
+>
+> 1. **Assertion tightened to exactly `HttpStatus.UNAUTHORIZED`**, not `isIn(UNAUTHORIZED, FORBIDDEN)` as shown below. A revoked session means the follow-up request has no `SecurityContext` to find at all — it's anonymous, and `SecurityConfig`'s `authenticationEntryPoint` sends a plain `401`. A `403` would mean the opposite of what this test is supposed to prove: that the session was still found and *authenticated*, just denied by an authorization check — i.e. deactivation silently didn't work. Loosening the assertion to accept either would have let that failure mode pass as green.
+> 2. **Two sessions, not one.** The design doc requires *every* open session for the agent to be revoked (they can be logged in from more than one browser). The actual test (see the implementation, not the sketch below) logs in twice for the same agent, captures two distinct `SESSION` cookies, asserts they differ, deactivates once, and asserts *both* cookies are now rejected — a single session doesn't prove the "every session" part of the requirement.
+> 3. **RED verified as `200`, not just "doesn't compile."** Wrote a deliberately incomplete `AgentDeactivationService` first — one that sets `is_active = false` and saves, but does *not* touch the session store — and ran the real test against it. It failed with `expected: 401 UNAUTHORIZED but was: 200 OK` on the first cookie, proving the failure mode is specifically "old cookie still works," the exact bug this task exists to prevent — not a compile error or some unrelated failure. Only after confirming that did the session-revocation logic (`sessionRepository.findByPrincipalName` + `deleteById`, shown in Step 3 below) get added, and the same run showed `Revoked 2 active session(s)` in the log before going green.
 
 ```java
 package com.insuranceforms.security;
@@ -2330,12 +2336,14 @@ class AgentDeactivationServiceTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AgentDeactivationServiceTest`
 Expected: FAIL — `AgentDeactivationService` doesn't exist yet.
 
-- [ ] **Step 3: Write `AgentDeactivationService.java`**
+Actual: staged as described in the deviation note above — first ran against a stub service (sets `is_active` only), got `expected: 401 UNAUTHORIZED but was: 200 OK`, confirming red for the right reason.
+
+- [x] **Step 3: Write `AgentDeactivationService.java`**
 
 ```java
 package com.insuranceforms.security;
@@ -2380,12 +2388,14 @@ public class AgentDeactivationService {
 }
 ```
 
-- [ ] **Step 4: Run the test and verify it passes**
+- [x] **Step 4: Run the test and verify it passes**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AgentDeactivationServiceTest`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+Actual: PASS, log line confirms `Revoked 2 active session(s) for deactivated agent ...`. Full suite (`mvn -f backend/pom.xml test`) re-run: 25/25 pass.
+
+- [x] **Step 5: Commit**
 
 ```bash
 git add backend/src/main/java/com/insuranceforms/security/AgentDeactivationService.java backend/src/test/java/com/insuranceforms/security/AgentDeactivationServiceTest.java
