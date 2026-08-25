@@ -1,5 +1,6 @@
 package com.insuranceforms.admin;
 
+import org.springframework.security.core.CredentialsContainer;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -8,16 +9,24 @@ import java.io.Serializable;
 import java.util.List;
 import java.util.UUID;
 
-public class AdminPrincipal implements UserDetails, Serializable {
+// Deliberately holds only the fields needed for authentication/authorization —
+// never the JPA entity itself. See AgentPrincipal for the full rationale.
+public class AdminPrincipal implements UserDetails, CredentialsContainer, Serializable {
 
-    private final Admin admin;
+    private static final long serialVersionUID = 1L;
+
+    private final UUID adminId;
+    private final String email;
+    private String passwordHash;
 
     public AdminPrincipal(Admin admin) {
-        this.admin = admin;
+        this.adminId = admin.getId();
+        this.email = admin.getEmail();
+        this.passwordHash = admin.getPasswordHash();
     }
 
     public UUID getAdminId() {
-        return admin.getId();
+        return adminId;
     }
 
     @Override
@@ -27,12 +36,12 @@ public class AdminPrincipal implements UserDetails, Serializable {
 
     @Override
     public String getPassword() {
-        return admin.getPasswordHash();
+        return passwordHash;
     }
 
     @Override
     public String getUsername() {
-        return admin.getEmail();
+        return email;
     }
 
     @Override
@@ -53,5 +62,10 @@ public class AdminPrincipal implements UserDetails, Serializable {
     @Override
     public boolean isCredentialsNonExpired() {
         return true;
+    }
+
+    @Override
+    public void eraseCredentials() {
+        this.passwordHash = null;
     }
 }

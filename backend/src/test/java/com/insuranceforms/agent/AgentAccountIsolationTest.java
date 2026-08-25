@@ -47,6 +47,7 @@ class AgentAccountIsolationTest {
         ResponseEntity<Map> loginResponse = restTemplate.exchange("/api/auth/agent/login", HttpMethod.POST,
                 new HttpEntity<>(Map.of("email", "isoa@example.com", "password", "correct-horse-battery"), loginHeaders),
                 Map.class);
+        assertThat(loginResponse.getStatusCode()).isEqualTo(HttpStatus.OK);
         String sessionCookie = extractCookie(loginResponse, "SESSION");
 
         HttpHeaders patchHeaders = new HttpHeaders();
