@@ -19,6 +19,10 @@ import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.security.web.context.DelegatingSecurityContextRepository;
+import org.springframework.security.web.context.HttpSessionSecurityContextRepository;
+import org.springframework.security.web.context.RequestAttributeSecurityContextRepository;
+import org.springframework.security.web.context.SecurityContextRepository;
 import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.web.cors.CorsConfiguration;
@@ -51,6 +55,20 @@ public class SecurityConfig {
         return new BCryptPasswordEncoder();
     }
 
+    // Filters built via http.formLogin()/http.securityContext() get this delegating
+    // repository wired automatically by Spring Security's own configurers. Since
+    // JsonAuthenticationFilter is constructed and added manually (addFilterAt), that
+    // wiring never happens and the filter falls back to its class default
+    // (RequestAttributeSecurityContextRepository only), which never persists the
+    // SecurityContext to the session — so no SESSION cookie is ever issued and every
+    // authenticated request after a "successful" login 401s. Set explicitly to match
+    // what the DSL would have wired.
+    private SecurityContextRepository sessionBackedSecurityContextRepository() {
+        return new DelegatingSecurityContextRepository(
+                new RequestAttributeSecurityContextRepository(),
+                new HttpSessionSecurityContextRepository());
+    }
+
     private AuthenticationManager buildManager(HttpSecurity http, UserDetailsService userDetailsService)
             throws Exception {
         AuthenticationManagerBuilder builder = http.getSharedObject(AuthenticationManagerBuilder.class);
@@ -68,6 +86,7 @@ public class SecurityConfig {
         JsonAuthenticationFilter loginFilter = new JsonAuthenticationFilter(manager, "/api/auth/agent/login", objectMapper);
         loginFilter.setAuthenticationSuccessHandler(new JsonLoginSuccessHandler(objectMapper, "AGENT"));
         loginFilter.setAuthenticationFailureHandler(new JsonLoginFailureHandler(objectMapper));
+        loginFilter.setSecurityContextRepository(sessionBackedSecurityContextRepository());
 
         http.securityMatcher("/api/auth/agent/**", "/api/agent/**")
                 .authenticationManager(manager)
@@ -91,6 +110,7 @@ public class SecurityConfig {
         JsonAuthenticationFilter loginFilter = new JsonAuthenticationFilter(manager, "/api/auth/admin/login", objectMapper);
         loginFilter.setAuthenticationSuccessHandler(new JsonLoginSuccessHandler(objectMapper, "ADMIN"));
         loginFilter.setAuthenticationFailureHandler(new JsonLoginFailureHandler(objectMapper));
+        loginFilter.setSecurityContextRepository(sessionBackedSecurityContextRepository());
 
         http.securityMatcher("/api/auth/admin/**", "/api/admin/**")
                 .authenticationManager(manager)

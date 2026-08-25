@@ -2039,7 +2039,7 @@ git commit -m "feat: add two-role session auth with JSON login and CSRF"
 - Consumes: `AgentPrincipal` (Task 7), `AgentRepository`, `AgentProfileResponse` (Task 6).
 - Produces: `GET /api/agent/me`, `PATCH /api/agent/me` — the canonical example of "id always comes from the session, never from the request body," reused as the pattern every later agent-owned resource follows. Task 9's deactivation test uses `GET /api/agent/me` to prove a revoked session is rejected.
 
-- [ ] **Step 1: Write the failing test — the tenant-isolation body-id-spoof test**
+- [x] **Step 1: Write the failing test — the tenant-isolation body-id-spoof test**
 
 Agent A logs in and PATCHes `/api/agent/me` with a payload whose `id` field is agent B's id. The assertion: only A's row changes; B's is untouched.
 
@@ -2132,12 +2132,20 @@ class AgentAccountIsolationTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AgentAccountIsolationTest`
 Expected: FAIL — `/api/agent/me` doesn't exist yet.
 
-- [ ] **Step 3: Write `UpdateAgentProfileRequest.java`**
+> **Deviation note — three real bugs found while turning this test green, all fixed in production code, not by weakening the test:**
+>
+> 1. **Actual first failure wasn't "endpoint missing," it was `extractCookie` NPE on `SESSION`** — login returned `200 OK` with the right JSON body, but *no `Set-Cookie` header at all*. Diagnosed by temporarily printing the raw login response (status/body/headers) before accepting any theory, per this project's standing rule. Root cause: `JsonAuthenticationFilter` is built and wired manually (`new JsonAuthenticationFilter(...)` + `.addFilterAt(...)`), bypassing the `http.formLogin()`/`http.securityContext()` DSL machinery that normally auto-injects a `DelegatingSecurityContextRepository` (request-attribute + HTTP-session) into `UsernamePasswordAuthenticationFilter`. Without that wiring, the filter falls back to its class default (request-attribute only), so a successful login authenticates the current request but never persists the `SecurityContext` into the HTTP session — meaning **no session was ever created on login, in production, not just in this test.** `GET`/`PATCH /api/agent/me` (and every future authenticated endpoint) would have 401'd on the very next request after every real login. Fixed by explicitly setting `loginFilter.setSecurityContextRepository(...)` to an equivalent `DelegatingSecurityContextRepository` on both `agentChain` and `adminChain` in `SecurityConfig.java`.
+> 2. **After fix 1, login started 500ing.** Server log showed `spring-session-jdbc` trying to Java-serialize the session (it stores session attributes as `bytea` via `ObjectOutputStream`) and hitting `NotSerializableException: com.insuranceforms.agent.Agent` — the stored `SecurityContext` → `Authentication` → `AgentPrincipal` chain holds a reference to the JPA `Agent` entity, and neither `Agent`/`Admin` nor `AgentPrincipal`/`AdminPrincipal` implemented `Serializable`. This was always going to break the instant any endpoint actually relied on session persistence (Task 7's tests never sent a second authenticated request, so it never surfaced). Fixed by adding `implements Serializable` to all four classes.
+> 3. **After fixes 1–2, the PATCH itself failed**: `ResourceAccessException ... Invalid HTTP method: PATCH`. Same class of `TestRestTemplate` default-client limitation already documented on `JdkClientTestConfig` (its javadoc already anticipated "POST/PATCH") — `HttpURLConnection` doesn't support the `PATCH` verb at all. Fixed by importing `JdkClientTestConfig` alongside `PostgresTestContainerConfig` in `AgentAccountIsolationTest`, same pattern as `LoginTest`/`CsrfTest`.
+>
+> All three were confirmed with real evidence (server stack traces / raw response dumps), not inferred — see the debugging log in-conversation. Full suite (`mvn -f backend/pom.xml test`) re-run after all fixes: 23/23 pass.
+
+- [x] **Step 3: Write `UpdateAgentProfileRequest.java`**
 
 The `id` field exists in the DTO but is deliberately never read by the controller below — this is what proves the isolation pattern under a client actively trying to override it, not merely a DTO shape that happens to omit the field.
 
@@ -2157,7 +2165,7 @@ public record UpdateAgentProfileRequest(
 }
 ```
 
-- [ ] **Step 4: Write `AgentAccountController.java`**
+- [x] **Step 4: Write `AgentAccountController.java`**
 
 ```java
 package com.insuranceforms.agent;
@@ -2204,15 +2212,17 @@ public class AgentAccountController {
 }
 ```
 
-- [ ] **Step 5: Run the test and verify it passes**
+- [x] **Step 5: Run the test and verify it passes**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AgentAccountIsolationTest`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+Actual: PASS. Also re-ran the full suite (`mvn -f backend/pom.xml test`): 23/23 pass, confirming the `SecurityConfig`/`Serializable` fixes from the deviation note above didn't regress Task 6/7's tests.
+
+- [x] **Step 6: Commit**
 
 ```bash
-git add backend/src/main/java/com/insuranceforms/agent/dto/UpdateAgentProfileRequest.java backend/src/main/java/com/insuranceforms/agent/AgentAccountController.java backend/src/test/java/com/insuranceforms/agent/AgentAccountIsolationTest.java
+git add backend/src/main/java/com/insuranceforms/agent/dto/UpdateAgentProfileRequest.java backend/src/main/java/com/insuranceforms/agent/AgentAccountController.java backend/src/test/java/com/insuranceforms/agent/AgentAccountIsolationTest.java backend/src/main/java/com/insuranceforms/security/SecurityConfig.java backend/src/main/java/com/insuranceforms/agent/Agent.java backend/src/main/java/com/insuranceforms/agent/AgentPrincipal.java backend/src/main/java/com/insuranceforms/admin/Admin.java backend/src/main/java/com/insuranceforms/admin/AdminPrincipal.java
 git commit -m "feat: add agent account endpoints proving tenant isolation from session"
 ```
 

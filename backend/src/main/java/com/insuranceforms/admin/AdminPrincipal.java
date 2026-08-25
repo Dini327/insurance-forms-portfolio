@@ -4,10 +4,11 @@ import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetails;
 
+import java.io.Serializable;
 import java.util.List;
 import java.util.UUID;
 
-public class AdminPrincipal implements UserDetails {
+public class AdminPrincipal implements UserDetails, Serializable {
 
     private final Admin admin;
 
