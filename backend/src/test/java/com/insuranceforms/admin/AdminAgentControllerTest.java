@@ -3,6 +3,7 @@ package com.insuranceforms.admin;
 import com.insuranceforms.agent.Agent;
 import com.insuranceforms.agent.AgentRepository;
 import com.insuranceforms.support.PostgresTestContainerConfig;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -21,6 +22,9 @@ import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+// This class shares its Spring context (and Postgres container) with other
+// test classes carrying the identical @SpringBootTest/@Import signature --
+// see the "shared test database" rule in the plan's Global Constraints.
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(PostgresTestContainerConfig.class)
@@ -36,6 +40,12 @@ class AdminAgentControllerTest {
     private AdminRepository adminRepository;
 
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+
+    @BeforeEach
+    void cleanSlate() {
+        agentRepository.deleteAll();
+        adminRepository.deleteAll();
+    }
 
     @SuppressWarnings("unchecked")
     @Test

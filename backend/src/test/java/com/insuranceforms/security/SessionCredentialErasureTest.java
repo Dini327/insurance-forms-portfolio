@@ -3,6 +3,7 @@ package com.insuranceforms.security;
 import com.insuranceforms.agent.Agent;
 import com.insuranceforms.agent.AgentRepository;
 import com.insuranceforms.support.PostgresTestContainerConfig;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -28,6 +29,15 @@ import static org.assertj.core.api.Assertions.assertThat;
 // JsonAuthenticationFilter has already been shown (see AgentAccountIsolationTest's
 // deviation note) to silently skip Spring Security wiring that the formLogin()
 // DSL would normally provide for free.
+//
+// This class shares its Spring context (and Postgres container) with other
+// test classes carrying the identical @SpringBootTest/@Import signature --
+// see the "shared test database" rule in the plan's Global Constraints. The
+// @BeforeEach cleanup wipes both agent and spring_session data: this test's
+// own query below assumes exactly one SPRING_SECURITY_CONTEXT row for
+// "erase@example.com" (queryForObject, not a list), so a leftover session
+// under the same email from an earlier test would make it throw
+// IncorrectResultSizeDataAccessException instead of testing anything.
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(PostgresTestContainerConfig.class)
@@ -43,6 +53,12 @@ class SessionCredentialErasureTest {
     private JdbcTemplate jdbcTemplate;
 
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+
+    @BeforeEach
+    void cleanSlate() {
+        jdbcTemplate.update("DELETE FROM spring_session");
+        agentRepository.deleteAll();
+    }
 
     @Test
     void passwordHashIsNotPersistedInTheStoredSession() {

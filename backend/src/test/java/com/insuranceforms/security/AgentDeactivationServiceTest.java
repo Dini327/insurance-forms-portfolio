@@ -3,6 +3,7 @@ package com.insuranceforms.security;
 import com.insuranceforms.agent.Agent;
 import com.insuranceforms.agent.AgentRepository;
 import com.insuranceforms.support.PostgresTestContainerConfig;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -13,6 +14,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.testcontainers.junit.jupiter.Testcontainers;
 
@@ -26,6 +28,18 @@ import static org.assertj.core.api.Assertions.assertThat;
 // deactivate() only flipped is_active without deleting the stored sessions,
 // these follow-up requests would still succeed (200), since isEnabled() is
 // only consulted once, during the original login -- not on every request.
+//
+// This class shares its Spring context (and Postgres container) with other
+// test classes carrying the identical @SpringBootTest/@Import signature --
+// see the "shared test database" rule in the plan's Global Constraints. The
+// @BeforeEach cleanup below wipes agent and spring_session data before each
+// test so hand-picked emails/agent_numbers can never collide across classes.
+// Wiping spring_session specifically (not just the agent row) matters here:
+// findByPrincipalName indexes sessions by email as a plain string with no FK
+// to agent, so a session left behind under a reused email from an earlier
+// test would still be found and revoked alongside the real one, inflating
+// "Revoked N session(s)" counts and silently reintroducing the exact
+// collision this cleanup exists to prevent.
 @Testcontainers
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 @Import(PostgresTestContainerConfig.class)
@@ -40,7 +54,16 @@ class AgentDeactivationServiceTest {
     @Autowired
     private AgentDeactivationService deactivationService;
 
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
+
     private final BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
+
+    @BeforeEach
+    void cleanSlate() {
+        jdbcTemplate.update("DELETE FROM spring_session");
+        agentRepository.deleteAll();
+    }
 
     @Test
     void deactivationRevokesEveryOpenSessionForTheAgent() {
