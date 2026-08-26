@@ -2561,7 +2561,18 @@ git commit -m "feat: bootstrap admin account from environment variables on start
 - Consumes: `AgentRepository` (Task 4) directly — intentional for stage 1 per the spec, since `agent` holds no insured data; must become a narrow projection query once stage 2 adds `submission`.
 - Produces: `GET /api/admin/agents` — the admin/agent 403 cross-boundary test required by the spec.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
+
+> **Deviation note — scope expanded before writing code, then two real bugs found while turning it green:**
+>
+> **Expanded per review, before implementation:**
+> 1. The controller must return `AdminAgentSummary` DTOs, never the `Agent` entity (which carries `passwordHash`) — already true of the sketch below, but the test now also asserts `keySet()` `doesNotContain("passwordHash", "password_hash")` explicitly and separately from the exact-fieldset check, so the guarantee reads directly off the test rather than as a side effect of another assertion.
+> 2. Both role-boundary tests log in as the "wrong" role first (so the request is genuinely authenticated) and assert exactly `403`, never `isIn(401, 403)` — verified against `SecurityConfig` first: `agentChain` already uses `.requestMatchers("/api/agent/**").hasRole("AGENT")` and `adminChain` uses `.requestMatchers("/api/admin/**").hasRole("ADMIN")`, not a bare `.authenticated()`, so no `SecurityConfig` change was needed for this task.
+> 3. The field-set test seeds **two** agents (not one) and asserts the response's size matches `agentRepository.count()` (read fresh, not hardcoded) plus that both seeded emails appear — a single-agent test wouldn't catch a bug that silently filters the list or ignores the DB.
+>
+> **Two real bugs found while running the tests, both fixed properly:**
+> 1. **The plan's own literal sketch for `agentCallingAdminOnlyEndpointGets403` has a latent bug**: it declares `ResponseEntity<List>`, but a `403` from Spring's default error handling is a JSON *object* (`{"timestamp":...,"status":403,...}`), not an array. Jackson throws `MismatchedInputException` trying to coerce an object into a `List` — before the status-code assertion ever runs, so this test would fail with a deserialization crash regardless of whether the 403 boundary itself works correctly. Confirmed by temporarily switching to `ResponseEntity<String>` and printing the raw status/body (`403`, `{"timestamp":...}`) before making the fix permanent — same debug-then-fix discipline as Task 8's session-cookie investigation. Fixed by declaring that one response as `String` (the test only needs the status code, not the body shape); `adminCallingAgentOnlyEndpointGets403`'s `ResponseEntity<Map>` was unaffected since a JSON object deserializes into a `Map` fine.
+> 2. **Agent-number collision across test classes.** The original `agent_number` values (`AG-6001`/`AG-6002`/`AG-6003`) collided with `AG-6001` already used in `SessionCredentialErasureTest` — a different test class, but one sharing this class's exact `@SpringBootTest(webEnvironment = RANDOM_PORT)` + `@Import(PostgresTestContainerConfig.class)` signature, and therefore Spring's cached/shared context (and Postgres container) when the full suite runs together. Running just this class in isolation passed; running the full suite failed with `duplicate key value violates unique constraint "agent_agent_number_key"`. Fixed by moving this class to an unused `AG-7xxx` range. Full suite (`mvn -f backend/pom.xml test`) re-run after both fixes: 33/33 pass.
 
 ```java
 package com.insuranceforms.admin;
@@ -2684,12 +2695,14 @@ class AdminAgentControllerTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AdminAgentControllerTest`
 Expected: FAIL — `/api/admin/agents` doesn't exist yet.
 
-- [ ] **Step 3: Write `AdminAgentSummary.java`**
+Actual: 2 of 3 failed as expected (list-fetch test and the agent→admin-boundary test, both hitting the nonexistent endpoint); `adminCallingAgentOnlyEndpointGets403` already passed at this stage, since `/api/agent/me` already exists from Task 8 and already correctly 403s an admin session — expected, not a red-stage anomaly.
+
+- [x] **Step 3: Write `AdminAgentSummary.java`**
 
 ```java
 package com.insuranceforms.admin.dto;
@@ -2711,7 +2724,7 @@ public record AdminAgentSummary(
 }
 ```
 
-- [ ] **Step 4: Write `AdminAgentController.java`**
+- [x] **Step 4: Write `AdminAgentController.java`**
 
 ```java
 package com.insuranceforms.admin;
@@ -2744,12 +2757,14 @@ public class AdminAgentController {
 }
 ```
 
-- [ ] **Step 5: Run the test and verify it passes**
+- [x] **Step 5: Run the test and verify it passes**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AdminAgentControllerTest`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+Actual: PASS, 3/3, after the two fixes documented in the deviation note above. Full suite: 33/33.
+
+- [x] **Step 6: Commit**
 
 ```bash
 git add backend/src/main/java/com/insuranceforms/admin/dto/AdminAgentSummary.java backend/src/main/java/com/insuranceforms/admin/AdminAgentController.java backend/src/test/java/com/insuranceforms/admin/AdminAgentControllerTest.java
