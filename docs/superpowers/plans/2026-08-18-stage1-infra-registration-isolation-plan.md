@@ -2786,7 +2786,12 @@ git commit -m "feat: add admin agent list endpoint with role-boundary enforcemen
 **Interfaces:**
 - Produces: `LogoStorage.store(bytes, contentType): LogoRef{id, url}`, `resolve(id): InputStream`, `delete(id)`. All stored logos are re-encoded PNG by the time they reach this layer (see Task 13), so `LocalDiskLogoStorage` always writes/serves `image/png` regardless of the `contentType` argument — this keeps the interface exactly as specced (`resolve` returns only an `InputStream`, no content type) while still letting the controller in Task 14 set a fixed `Content-Type: image/png` header.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
+
+> **Deviation note — two changes decided before writing code, per review:**
+>
+> 1. **`store(bytes, contentType)` → `store(bytes)`.** The original signature accepted a `contentType` argument that `LocalDiskLogoStorage` always ignored (always writes/serves `image/png`, per this task's own **Interfaces** note above). Every call site in Task 14's own sketch already passes the literal `"image/png"` unconditionally — the parameter was never going to carry real information. A parameter a caller must supply but the callee always discards is misleading to a future reader, so it's removed from the interface entirely rather than kept-but-ignored. Documented as a Javadoc-style comment directly on `LogoStorage` ("every logo reaching this layer is already re-encoded PNG") so Tasks 13-14 stay in sync — **Task 14's own literal sketch further down this file still shows `logoStorage.store(processed, "image/png")` and needs the second argument dropped when that task is reached.**
+> 2. **Path traversal defense, added at this layer even though the public URL doesn't exist until Task 14.** `resolve`/`delete` take a `UUID`, not a `String` — this is the actual defense: `UUID.toString()` can only ever produce the canonical 8-4-4-4-12 hex format, so `pathFor()`'s `storageDir.resolve(id + ".png")` can never be made to escape `storageDir`, no matter what string a future controller receives on the wire. Added a fourth test, `malformedIdentifierCannotBeParsedIntoAUuidToAttemptPathTraversal`, proving the actual boundary that matters: `UUID.fromString("../../../application")` throws `IllegalArgumentException` before a traversal string could ever reach `resolve`/`delete`. (There is no `resolve(String)` overload to attack directly — the type signature itself is the guarantee; this test proves the conversion a future caller must perform can't be tricked into producing a dangerous `UUID`.)
 
 ```java
 package com.insuranceforms.logo;
@@ -2841,12 +2846,14 @@ class LocalDiskLogoStorageTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `mvn -f backend/pom.xml test -Dtest=LocalDiskLogoStorageTest`
 Expected: FAIL — none of these classes exist yet.
 
-- [ ] **Step 3: Write `LogoRef.java`**
+Actual: FAIL as expected, compile errors for all four missing classes.
+
+- [x] **Step 3: Write `LogoRef.java`**
 
 ```java
 package com.insuranceforms.logo;
@@ -2857,7 +2864,7 @@ public record LogoRef(UUID id, String url) {
 }
 ```
 
-- [ ] **Step 4: Write `LogoStorage.java`**
+- [x] **Step 4: Write `LogoStorage.java`** (signature is `store(byte[] bytes)`, see deviation note above)
 
 ```java
 package com.insuranceforms.logo;
@@ -2872,7 +2879,7 @@ public interface LogoStorage {
 }
 ```
 
-- [ ] **Step 5: Write `LogoNotFoundException.java`**
+- [x] **Step 5: Write `LogoNotFoundException.java`**
 
 ```java
 package com.insuranceforms.logo;
@@ -2890,7 +2897,7 @@ public class LogoNotFoundException extends RuntimeException {
 }
 ```
 
-- [ ] **Step 6: Write `LocalDiskLogoStorage.java`**
+- [x] **Step 6: Write `LocalDiskLogoStorage.java`** (signature is `store(byte[] bytes)`, see deviation note above)
 
 ```java
 package com.insuranceforms.logo;
@@ -2958,12 +2965,14 @@ public class LocalDiskLogoStorage implements LogoStorage {
 }
 ```
 
-- [ ] **Step 7: Run the test and verify it passes**
+- [x] **Step 7: Run the test and verify it passes**
 
 Run: `mvn -f backend/pom.xml test -Dtest=LocalDiskLogoStorageTest`
 Expected: PASS
 
-- [ ] **Step 8: Commit**
+Actual: PASS, 4/4. Full suite (`mvn -f backend/pom.xml test`): 37/37. This class needed no `@BeforeEach` cleanup and shares no state with any other test class — each test gets its own fresh `@TempDir`, no Spring context, no shared database at all.
+
+- [x] **Step 8: Commit**
 
 ```bash
 git add backend/src/main/java/com/insuranceforms/logo/LogoRef.java backend/src/main/java/com/insuranceforms/logo/LogoStorage.java backend/src/main/java/com/insuranceforms/logo/LogoNotFoundException.java backend/src/main/java/com/insuranceforms/logo/LocalDiskLogoStorage.java backend/src/test/java/com/insuranceforms/logo/LocalDiskLogoStorageTest.java
