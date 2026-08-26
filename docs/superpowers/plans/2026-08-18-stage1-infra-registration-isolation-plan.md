@@ -2417,7 +2417,20 @@ git commit -m "feat: revoke existing sessions on agent deactivation"
 - Consumes: `AdminRepository` (Task 4), `app.admin-bootstrap-email`/`app.admin-bootstrap-password` (Task 1's `application.yml`).
 - Produces: exactly one `admin` row on first startup when env vars are set and no admin exists yet; idempotent on every later startup.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
+
+> **Deviation note — expanded scope, decided before writing any code, per review of three risks in the original sketch:**
+>
+> 1. **"A row exists" doesn't prove "you can log in with it."** A wrong hash or an email saved with stray whitespace/casing would pass `findByEmail(...).isPresent()` and then fail to actually authenticate. `createsExactlyOneAdminFromEnvOnRealApplicationStartup` (renamed from `createsExactlyOneAdminFromEnvOnStartup`) now also does a real `POST /api/auth/admin/login` with the env credentials and asserts `200 OK` + `role: ADMIN`, plus a wrong-password attempt asserting `401`. This needed `webEnvironment = RANDOM_PORT` + `TestRestTemplate` (and `JdkClientTestConfig`, for the same reason documented on Task 8's deviation note) instead of the plain `@SpringBootTest` shown below.
+> 2. **Idempotency needed to be proven in both directions, not just "doesn't crash on restart."** Added `AdminBootstrapRunnerLogicTest.java` (new file, not in the original **Files** list) with `secondBootstrapAttemptWithADifferentPasswordDoesNotOverwriteTheExisting`: bootstraps once, captures the stored hash, bootstraps again with a *different* password, and asserts the hash is unchanged, the original password still `passwordEncoder.matches(...)`, and the new one does not.
+> 3. **Never create an admin with a blank/null password, and don't fail silently either way.** `AdminBootstrapRunner` logs a `WARN` (naming the two env vars, never a value) and skips when email/password aren't both set, rather than either creating a broken account or crashing the whole app over an admin-panel-only concern (agents/insureds don't depend on the admin panel). `blankBootstrapCredentialsNeverCreateAnAdmin` asserts no admin gets created and the warning is actually logged (via `OutputCaptureExtension`) — not silent.
+> 4. **Never log the plaintext bootstrap password.** `successfulBootstrapNeverLogsThePlaintextPassword` captures output around a real (successful) bootstrap and asserts the raw password string is absent from it, while also asserting *something* was logged (the email) — so the check can't pass vacuously just because nothing got logged at all.
+>
+> `AdminBootstrapRunnerLogicTest`'s three tests each start with `adminRepository.deleteAll()` and construct `AdminBootstrapRunner` manually (not via DI) rather than sharing `AdminBootstrapRunnerTest`'s one-time real startup — two reasons: (a) tests mutating a shared table via `deleteAll()` would otherwise be order-dependent on whatever `AdminBootstrapRunnerTest` already created, and (b) `OutputCaptureExtension` only captures within a test method's window, but the real `ApplicationRunner` bean already ran once during context startup, before any test method's window opens — so reliably capturing its log output requires triggering the call from inside the test method itself.
+>
+> **Negative control**, same technique as Tasks 8/9: temporarily disabled the blank-credentials guard (`if (false) { ... }` in place of the real condition) and reran `blankBootstrapCredentialsNeverCreateAnAdmin` alone — it failed with `expected: 0L but was: 1L`, proving an admin with an empty-string password hash really does get created when the guard is missing, and that the test catches it. Reverted immediately after.
+>
+> **Documented, not implemented — a note for future stages, not a stage-1 requirement:** if this runner ever executes from more than one instance concurrently (the reason `spring-session-jdbc` was chosen over in-memory sessions in the first place — see Task 1/7), both instances could observe `count() == 0` and race to insert; the second would fail on the `email` unique constraint (`V3__create_admin_table.sql`), not silently create a duplicate or corrupt state. Not a bug for a single instance, and out of scope to fix here, but worth knowing about if/when this becomes multi-instance.
 
 ```java
 package com.insuranceforms.admin;
@@ -2455,12 +2468,12 @@ class AdminBootstrapRunnerTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AdminBootstrapRunnerTest`
 Expected: FAIL — no admin row is created, `AdminBootstrapRunner` doesn't exist.
 
-- [ ] **Step 3: Write `AdminBootstrapRunner.java`**
+- [x] **Step 3: Write `AdminBootstrapRunner.java`**
 
 ```java
 package com.insuranceforms.admin;
@@ -2503,7 +2516,9 @@ public class AdminBootstrapRunner implements ApplicationRunner {
 }
 ```
 
-- [ ] **Step 4: Add the bootstrap variables to `.env.example`**
+- [x] **Step 4: Add the bootstrap variables to `.env.example`**
+
+Actual: already present from an earlier task (`.env.example` was created early per Task 7's deviation note); nothing to add.
 
 ```bash
 # .env.example
@@ -2519,15 +2534,17 @@ SESSION_TIMEOUT=8h
 LOGO_STORAGE_DIR=./storage/logos
 ```
 
-- [ ] **Step 5: Run the test and verify it passes**
+- [x] **Step 5: Run the test and verify it passes**
 
 Run: `mvn -f backend/pom.xml test -Dtest=AdminBootstrapRunnerTest`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+Actual: PASS, including the real-login and wrong-password assertions. `AdminBootstrapRunnerLogicTest`'s three tests also pass. Full suite (`mvn -f backend/pom.xml test`): 30/30.
+
+- [x] **Step 6: Commit**
 
 ```bash
-git add backend/src/main/java/com/insuranceforms/admin/AdminBootstrapRunner.java backend/src/test/java/com/insuranceforms/admin/AdminBootstrapRunnerTest.java .env.example
+git add backend/src/main/java/com/insuranceforms/admin/AdminBootstrapRunner.java backend/src/test/java/com/insuranceforms/admin/AdminBootstrapRunnerTest.java backend/src/test/java/com/insuranceforms/admin/AdminBootstrapRunnerLogicTest.java
 git commit -m "feat: bootstrap admin account from environment variables on startup"
 ```
 
