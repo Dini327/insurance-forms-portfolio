@@ -201,6 +201,23 @@ that a fill "works" based on a read-back alone.
   WebP 98KB, PNG 164KB, JPEG 195KB. JPEG is *worse* than PNG here — these pages
   are sharp black text on white, which is exactly what JPEG handles badly.
   150 DPI is enough; the image is a backdrop, not the input surface.
+  **Known gap, found in stage 1 (Task 13) and not yet resolved:** the JDK's
+  built-in `ImageIO` has no WebP support at all — no reader, and (relevant
+  here) no writer either. Stage 1 hit this from the reader side (logo
+  uploads) and dropped WebP from the upload allowlist rather than add a
+  dependency for it. This bullet needs a WebP *writer* for the offline
+  Phase A tool — the same gap, the opposite direction. Don't rediscover this
+  as a surprise when Phase A tooling is built: it will need a WebP-capable
+  ImageIO module added deliberately, not the full TwelveMonkeys suite
+  (minimize decoder attack surface, same reasoning as Task 13 — this offline
+  tool isn't network-facing, but the runtime service that later reads these
+  images as a backdrop for user input has no reason to also carry extra
+  image *decoders* it never needs). Verify **write** support specifically
+  before picking a library — WebP write support across ImageIO plugins
+  (TwelveMonkeys included) tends to be newer and more limited than read
+  support, so "it can read WebP" does not imply "it can write WebP well."
+  This needs its own decision when stage 2 gets there, not an assumption
+  carried over from Task 13's read-side finding.
 
 ---
 

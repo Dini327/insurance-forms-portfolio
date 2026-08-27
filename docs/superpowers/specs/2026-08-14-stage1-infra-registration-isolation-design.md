@@ -299,8 +299,12 @@ how the database connection is only configured at deploy time.
 
 **Upload validation and reprocessing** (this is the first file upload in the
 system):
-- Accepted formats: PNG, JPEG, WebP only — no SVG (SVG can carry embedded
-  scripts, not worth the risk for a logo).
+- Accepted formats: PNG, JPEG only — no SVG (SVG can carry embedded
+  scripts, not worth the risk for a logo). WebP was originally in scope but
+  dropped during Task 13: the JDK's built-in `ImageIO` has no WebP decoder,
+  and adding one would mean a new third-party image-decoding dependency
+  purely for a logo upload — not worth the added attack surface (image
+  decoders are a classic CVE source).
 - Validate by **decoding** the bytes with `ImageIO`, not by trusting the file
   extension or the client-supplied `Content-Type`. Anything that fails to
   decode as a genuine raster image is rejected, regardless of what it claims to

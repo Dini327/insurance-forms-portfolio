@@ -22,7 +22,7 @@
 - Password policy: minimum 10 characters, no composition rules.
 - `email` columns are `citext` (case-insensitive unique) on both `agent` and `admin`; `agent_number` is unique (trial-abuse prevention).
 - Logo delivery is a public, unauthenticated URL under an opaque random id (`GET /logos/{opaqueId}`) — this is intentional, not a bug, because email clients can't authenticate.
-- Logo uploads: PNG/JPEG/WebP only, validated by decoding with `ImageIO` (never by extension or client-supplied `Content-Type`), capped at 2MB before decoding, re-encoded to strip embedded metadata, resized to at most 512px on the long edge.
+- Logo uploads: **PNG/JPEG only** (WebP dropped from the original PNG/JPEG/WebP scope — decided in Task 13: the JDK's built-in `ImageIO` has no WebP reader at all, and adding one means a new third-party image-decoding dependency, which is exactly the kind of added attack surface — image decoders are a classic CVE source — not worth it for a logo. If WebP is ever required later, add only the `imageio-webp` module specifically, never the full TwelveMonkeys suite, to avoid pulling in decoders nobody asked for). Validated by decoding with `ImageIO` **and** checking the decoded format name against the PNG/JPEG allowlist (never by extension or client-supplied `Content-Type` — and not just "did it decode" either, since the JDK can decode formats like BMP/GIF that aren't on the allowlist), capped at 2MB before decoding, dimensions checked against a source-side maximum (via `ImageReader.getWidth/getHeight`, before full pixel decode) to block decompression bombs, re-encoded to strip embedded metadata, resized to at most 512px on the long edge.
 - `spring.jpa.hibernate.ddl-auto=none` — Flyway owns the schema. (Hibernate's schema validator does not recognize `citext` as a variant of `varchar` and will fail `ddl-auto=validate` at startup; `none` sidesteps that false mismatch entirely.)
 - Every backend integration test that touches PostgreSQL uses Testcontainers via the shared `PostgresTestContainerConfig` (Task 1), not a hand-run local database.
 - **Shared test database.** Test classes with an identical `@SpringBootTest`/`@Import` signature (same `webEnvironment`, same `@Import` set, no class-specific `@DynamicPropertySource`) share one cached Spring context and therefore one real Postgres container/database — confirmed directly (Task 11: `AdminAgentControllerTest` and `SessionCredentialErasureTest` collided on a hand-picked `agent_number` despite being in different files, because their signatures matched). Every such test class that inserts into `agent`/`admin` must clean up in a `@BeforeEach` (`agentRepository.deleteAll()` / `adminRepository.deleteAll()`; also `jdbcTemplate.update("DELETE FROM spring_session")` — cascades to `spring_session_attributes` — for any test whose assertions depend on session state, e.g. `AgentDeactivationServiceTest`, `SessionCredentialErasureTest`, since a session is indexed by email as a plain string with no FK to `agent` and survives an `agent` row's deletion on its own). `@Transactional` on the test class was considered and rejected: these tests make real HTTP calls via `TestRestTemplate` against an embedded server, which runs the request on a separate thread/connection from the test method's, so a test-level transaction would not roll back anything written through the endpoint under test — only what the test wrote directly. **This cleanup pattern assumes serial test execution** (Maven Surefire's default, and this project's current configuration — no parallel test execution is configured). Under parallel execution, test classes sharing a database would delete each other's in-progress data; do not enable parallel test execution without first giving every such class its own isolated database (e.g. per-class Testcontainers instances instead of a shared one). Exception: `AdminBootstrapRunnerTest`, which relies on `@DynamicPropertySource` to get its own dedicated context specifically so its one real-startup admin survives untouched — do not add cleanup there.
@@ -2991,7 +2991,59 @@ git commit -m "feat: add LogoStorage interface and local disk implementation"
 **Interfaces:**
 - Produces: `LogoImageProcessor.process(byte[] uploadedBytes): byte[]` — decodes, validates, strips metadata, resizes, and re-encodes to PNG, or throws `InvalidLogoException`. Consumed by Task 14's `LogoUploadService`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
+
+> **Deviation note — this is the heaviest security surface in the stage (first untrusted external input), expanded substantially in review before any code was written:**
+>
+> 1. **Format allowlist, not just "did it decode."** The JDK's `ImageIO` decodes BMP/GIF/WBMP too, none of which are in scope. Added a check of `reader.getOriginatingProvider().getFormatNames()` against an explicit `{"png","jpeg","jpg"}` allowlist (all lowercase — format-name casing isn't guaranteed uniform across reader implementations, so the comparison always lowercases first). Added `rejectsFormatsThatDecodeButArentOnTheAllowlist` (a real BMP) and, to prove the lowercase fix isn't hiding a case bug that only breaks one format silently, a dedicated `acceptsAValidJpegThroughTheFormatAllowlist` (not just incidentally covered by the resize/EXIF tests, which would fail for JPEG but not point at *why*). `rejectsSvgBecauseImageIOHasNoSvgDecoder` covers the format ImageIO can't recognize at all.
+> 2. **WebP dropped from scope entirely**, not just left unimplemented. The JDK has no WebP decoder, and adding one is a new third-party image-decoding dependency — not worth the attack surface for a logo (image decoders are a classic CVE source; if ever needed, add only the `imageio-webp` module, never the full TwelveMonkeys suite). Updated `CLAUDE.md` (added a connecting note near the *unrelated* stage-2 WebP-writer requirement for page rendering, so that gap isn't rediscovered as a surprise later — including that WebP *write* support across ImageIO plugins tends to be newer/more limited than read support, a separate decision for stage 2) and this plan's own Global Constraints and the design spec doc (both said "PNG/JPEG/WebP", now "PNG/JPEG"). Because a WebP upload would otherwise fall through to the generic "not a decodable image" message (technically true, dishonestly vague about the real reason), added an explicit magic-byte sniff (`RIFF` at bytes 0-3, `WEBP` at bytes 8-11) that rejects it with the same `"Unsupported format"` message as any other disallowed-but-recognizable format, plus `rejectsWebpWithTheSameHonestMessageAsOtherDisallowedFormatsNotAGenericDecodeFailure`.
+> 3. **Decompression bomb protection, not just a byte-size cap.** A 2MB file can still declare pixel dimensions in its header (e.g. PNG's `IHDR`) that would allocate gigabytes once decoded. Added a header-only check via `ImageReader.getWidth(0)`/`getHeight(0)` (no full pixel decode) against `MAX_SOURCE_DIMENSION = 4000` per side *and* `MAX_SOURCE_PIXELS` (`4000L * 4000`, explicit `long` to avoid `int` overflow) as the product — redundant with the per-side check today, but keeps the guarantee intact if a future change only touches one of the two checks. `rejectsClaimedDimensionsAboveTheMaximumBeforeAllocatingPixelData` crafts a PNG with a real signature + `IHDR` (real `CRC32`, computed in the test) + `IEND` claiming 40000×40000 — no `IDAT`, no actual pixel data — and asserts the *message* specifically contains "dimensions exceed" (not just `InvalidLogoException`), so the test can't pass merely because the crafted bytes were rejected earlier as "not decodable" for an unrelated reason. Verified empirically that Java's `PNGImageReader` can report header dimensions from `IHDR`+`IEND` alone, with no `IDAT` present — this was flagged up front as needing verification rather than assumption, and passed on the first real run.
+> 4. **Metadata stripping proven with real EXIF, not a weaker proxy.** The original sketch below only proved arbitrary trailing bytes get dropped — not real, structured EXIF. Replaced with `reEncodingStripsRealExifMetadataAndOutputIsPng`: embeds a genuine APP1/EXIF marker segment via `ImageWriter`'s own `IIOMetadata` API (`MarkerTag=225` for APP1, payload starting with the literal `Exif\0\0` identifier real cameras use — not string concatenation), asserts the fixture actually contains the marker *before* processing (so its absence afterward proves something), then asserts neither the marker nor the literal string `"Exif"` survive in the processed bytes, and that the output starts with the PNG magic signature (`0x89 P N G ...`) regardless of the JPEG source format. This ImageIO-metadata technique was also flagged as needing empirical verification and passed on the first real run.
+>
+> **Deliberately deferred, documented rather than silently skipped:** a decode-time-limit/timeout guard against CPU-bound (not memory-bound) decode pathologies (e.g. pathological Huffman tables in progressive JPEG) was considered and not added. Two reasons: the blast radius here is one authenticated agent uploading one logo once during account setup, not a public high-throughput endpoint; and `ImageIO.read()` isn't cleanly interruptible — wrapping it in a cancellable `Future` would stop the caller from waiting, not stop the decode from consuming CPU, so it would hide the symptom without preventing the resource exhaustion. The real defense against a memory-based bomb is the dimension cap already added above. **Trigger to revisit:** if the logo upload path (or any future `ImageIO`-based decode path) is ever exposed to less-trusted input than "one authenticated agent, one file, at account setup."
+>
+> **Real bug found in review after the above was already green, fixed before commit:** `resize()`'s output buffer was `BufferedImage.TYPE_INT_RGB` — no alpha channel. A logo is exactly the image most likely to have a transparent PNG background; drawing a transparent source into an RGB-only buffer composites the transparent areas against that buffer's black default fill, silently turning a transparent logo into one with a solid black box behind it. Every existing test still passed (valid PNG, correct dimensions) — none of them checked pixel-level transparency. Fixed to `TYPE_INT_ARGB`. Added `preservesTransparencyInsteadOfCompositingItToOpaqueBlack`: renders a fully-transparent PNG (a fresh `TYPE_INT_ARGB` `BufferedImage` starts as all-zero pixels, i.e. alpha 0, with no explicit writes needed), processes it, and asserts the decoded output's pixel alpha is still `0` and `getColorModel().hasAlpha()` is true. Verified non-vacuously with the same negative-control technique as Tasks 8-10: temporarily reverted to `TYPE_INT_RGB` and reran just this test — failed (`hasAlpha()` false, transparency lost entirely), confirmed the fix, then restored. While fixing this, also applied two related but independent improvements: replaced `getScaledInstance`/`Image.SCALE_SMOOTH` (older API, can blur) with `Graphics2D.drawImage` plus explicit `RenderingHints` (bilinear interpolation, quality rendering, antialiasing) for a sharper resize; and replaced `reader.getOriginatingProvider().getFormatNames()` (an array requiring a `Locale.ROOT`-lowercased stream match) with the simpler, equally case-inconsistent-safe `reader.getFormatName()` (confirmed via `javap javax.imageio.ImageReader` to exist and return a single `String`, throwing `IOException` — verified rather than assumed, same discipline as everything else in this task). Full suite re-run after all of this: 48/48.
+
+Original test sketch (superseded by the actual, more extensive test file — see deviation note above):
+
+```java
+package com.insuranceforms.logo;
+
+import org.junit.jupiter.api.Test;
+
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+class LogoImageProcessorTest {
+
+    private final LogoImageProcessor processor = new LogoImageProcessor();
+
+    private byte[] renderSampleJpeg(int width, int height) throws IOException {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        ImageIO.write(image, "jpg", out);
+        return out.toByteArray();
+    }
+
+    private int indexOf(byte[] haystack, byte[] needle) {
+        outer:
+        for (int i = 0; i <= haystack.length - needle.length; i++) {
+            for (int j = 0; j < needle.length; j++) {
+                if (haystack[i + j] != needle[j]) {
+                    continue outer;
+                }
+            }
+            return i;
+        }
+        return -1;
+    }
 
 ```java
 package com.insuranceforms.logo;
@@ -3083,12 +3135,14 @@ class LogoImageProcessorTest {
 }
 ```
 
-- [ ] **Step 2: Run the test and verify it fails**
+- [x] **Step 2: Run the test and verify it fails**
 
 Run: `mvn -f backend/pom.xml test -Dtest=LogoImageProcessorTest`
 Expected: FAIL — `LogoImageProcessor`/`InvalidLogoException` don't exist yet.
 
-- [ ] **Step 3: Write `InvalidLogoException.java`**
+Actual: FAIL as expected, compile errors for both missing classes (against the actual, expanded test file — see deviation note above).
+
+- [x] **Step 3: Write `InvalidLogoException.java`**
 
 ```java
 package com.insuranceforms.logo;
@@ -3100,7 +3154,7 @@ public class InvalidLogoException extends RuntimeException {
 }
 ```
 
-- [ ] **Step 4: Write `LogoImageProcessor.java`**
+- [x] **Step 4: Write `LogoImageProcessor.java`** (actual implementation adds the format allowlist, WebP sniff, and header-only dimension check — see deviation note above; sketch below is the original, superseded version)
 
 ```java
 package com.insuranceforms.logo;
@@ -3171,15 +3225,17 @@ public class LogoImageProcessor {
 }
 ```
 
-- [ ] **Step 5: Run the test and verify it passes**
+- [x] **Step 5: Run the test and verify it passes**
 
 Run: `mvn -f backend/pom.xml test -Dtest=LogoImageProcessorTest`
 Expected: PASS
 
-- [ ] **Step 6: Commit**
+Actual: PASS, 10/10 (the actual test file has 10 tests, not the 6 in the original sketch — see deviation note above). Full suite (`mvn -f backend/pom.xml test`): 47/47.
+
+- [x] **Step 6: Commit**
 
 ```bash
-git add backend/src/main/java/com/insuranceforms/logo/InvalidLogoException.java backend/src/main/java/com/insuranceforms/logo/LogoImageProcessor.java backend/src/test/java/com/insuranceforms/logo/LogoImageProcessorTest.java
+git add backend/src/main/java/com/insuranceforms/logo/InvalidLogoException.java backend/src/main/java/com/insuranceforms/logo/LogoImageProcessor.java backend/src/test/java/com/insuranceforms/logo/LogoImageProcessorTest.java CLAUDE.md docs/superpowers/specs/2026-08-14-stage1-infra-registration-isolation-design.md
 git commit -m "feat: validate and reprocess uploaded logos, stripping embedded metadata"
 ```
 
