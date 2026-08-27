@@ -15,6 +15,10 @@ spring:
     jdbc:
       initialize-schema: always
     timeout: ${SESSION_TIMEOUT:8h}
+  servlet:
+    multipart:
+      max-file-size: 3MB
+      max-request-size: 3MB
 
 server:
   port: ${SERVER_PORT:8080}

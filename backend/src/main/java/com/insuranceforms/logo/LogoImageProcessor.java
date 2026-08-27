@@ -1,5 +1,7 @@
 package com.insuranceforms.logo;
 
+import org.springframework.stereotype.Component;
+
 import javax.imageio.ImageIO;
 import javax.imageio.ImageReader;
 import javax.imageio.stream.ImageInputStream;
@@ -14,6 +16,7 @@ import java.util.Iterator;
 import java.util.Locale;
 import java.util.Set;
 
+@Component
 public class LogoImageProcessor {
 
     private static final int MAX_UPLOAD_BYTES = 2 * 1024 * 1024;
