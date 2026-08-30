@@ -3576,7 +3576,9 @@ export async function ensureCsrfCookie(): Promise<void> {
 export default apiClient
 ```
 
-- [ ] **Step 2: Write the failing test — App now renders routed pages, keeping the existing title assertion true for the login route**
+- [ ] **Step 2: Write the failing test — /login must route to AgentLoginPage specifically, not just render App at all**
+
+> **Deviation note — the original assertion here did not produce a real red:** wrapping the current single-heading `App.tsx` in `<MemoryRouter initialEntries={['/login']}>` and asserting on `'מערכת טפסי ביטוח'` passes trivially, because that heading renders unconditionally regardless of route — `App.tsx` has no `<Routes>` yet, so it does not "reject" being wrapped in a router, it simply ignores it. That title also appears on all four pages once routing exists, so it can never prove landing specifically on `/login`. The real assertion needs a route-specific accessible name: `AgentLoginPage`'s own `<h2>כניסת סוכן</h2>`, checked via `getByRole('heading', { name: 'כניסת סוכן' })`. This is expected to be red for the entire span of Steps 2 through 7 and only turn green at Step 8, once `/login` is actually wired to `AgentLoginPage` — that continuous red-to-green is the point of the test, not a bug to fix early.
 
 ```tsx
 import { render, screen } from '@testing-library/react'
@@ -3585,13 +3587,13 @@ import { MemoryRouter } from 'react-router-dom'
 import App from './App'
 
 describe('App', () => {
-  it('renders the app title on the agent login route', () => {
+  it('routes /login to the agent login page', () => {
     render(
       <MemoryRouter initialEntries={['/login']}>
         <App />
       </MemoryRouter>,
     )
-    expect(screen.getByText('מערכת טפסי ביטוח')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'כניסת סוכן' })).toBeInTheDocument()
   })
 })
 ```
@@ -3599,7 +3601,7 @@ describe('App', () => {
 - [ ] **Step 3: Run the test and verify it fails**
 
 Run: `npm --prefix frontend test`
-Expected: FAIL — `App.tsx` doesn't accept being wrapped in an external router yet (it currently renders a bare heading with no routes).
+Expected: FAIL — `App.tsx` currently renders only `<h1>מערכת טפסי ביטוח</h1>` with no `<Routes>`, so no element with accessible name `'כניסת סוכן'` exists yet at any route.
 
 - [ ] **Step 4: Write `AgentLoginPage.tsx`**
 
@@ -3908,6 +3910,9 @@ Expected: exits 0 with no TypeScript errors.
 4. Log in with those credentials at `/login`, confirm redirect to `/account` and the profile loads.
 5. Edit the full name and agency name, save, reload the page, confirm the edit persisted.
 6. Upload a PNG/JPEG logo, confirm "לוגו הועלה בהצלחה" appears; open the returned `/logos/{id}` URL directly in a new tab with no login, confirm the image renders.
+
+> **Note on Step 12.6 — the returned URL is relative:** `LocalDiskLogoStorage.store` returns `"/logos/" + id`, not an absolute URL. Two distinct cases follow from this: (a) opening it manually in a new browser tab requires prepending the origin yourself — `http://localhost:3000/logos/{id}`, not the bare relative path the app displays — because a relative path typed into the address bar resolves against whatever page is currently open, not against the dev server; (b) displaying it inside the page itself (e.g. an `<img src>` or `<a href>` in `AgentAccountPage`) needs no such prefix — a relative path there already resolves against `localhost:3000`, and Vite's `/logos` proxy (see `vite.config.ts`) forwards it to the backend transparently. Verified this distinction before writing `AgentAccountPage.tsx`, not after — see the Stage 3 deferred item below for why the same relative URL will need re-examining once the frontend and backend are no longer served from the same origin.
+
 7. Log out (clear cookies) and open `http://localhost:3000/admin/login`; log in with the `ADMIN_BOOTSTRAP_EMAIL`/`ADMIN_BOOTSTRAP_PASSWORD` set in your local env, confirm it succeeds.
 8. Report explicitly which of these steps were actually run and observed working, per CLAUDE.md's "never claim something works until verified the way it will actually be used."
 
@@ -3935,4 +3940,28 @@ CLAUDE.md's tenant-isolation requirement calls for a test that logs in as agent 
 
 - [ ] **Stage 2 must add:** once the `submission` table exists and agents can send requests to insured people by id (e.g. `GET /api/agent/requests/{id}` or similar), write a test — agent A logs in, requests agent B's submission by id in the URL path, asserts 403 — before stage 2 is considered done. Do not consider CLAUDE.md's tenant-isolation requirement fully satisfied until this test exists, even though stage 1's narrower body-id test passes cleanly on its own.
 
+- [ ] **Stage 2 must add:** an unauthenticated user who navigates directly to `/account` hangs forever on "טוען...". Manually characterized in an incognito window with no session: `GET /agent/me` returns 401, the `.then()` in `AgentAccountPage`'s `useEffect` has no `.catch`, so `profile` never leaves `null` and the page never redirects. The router's catch-all (`<Route path="*" element={<Navigate to="/login" />} />`) does not help here — `/account` is a known route, so it never falls through to the wildcard; only genuinely unknown paths get redirected today. Fix in stage 2 with a route guard (or a `.catch` on the profile fetch) that redirects to `/login` on a 401 from `/agent/me`.
+
+- [ ] שלב 2: הצגת הלוגו עצמו (`<img>`) בעמוד החשבון. דורש הרחבת
+      `AgentProfileResponse` להחזיר `logoId` (או `logoUrl`), כדי שהפרונט
+      יוכל לבנות `/logos/{id}` כפי שכבר נעשה בתשובת ההעלאה. כיום
+      `GET /agent/me` מחזיר רק `logoUploaded: boolean`.
+
 **Known gap, carried forward from the spec, not fixed in this stage:** "session survives a simulated backend restart" is not covered by an explicit automated test in this plan — `spring-session-jdbc` persisting to Postgres (rather than in-memory) is what makes this true architecturally, but proving it end-to-end would mean tearing down and rebuilding the Spring context mid-test against the same Testcontainers instance, which is disproportionate effort for this stage. If this matters before stage 3's real deployment, add it then as a `@DirtiesContext`-based test that restarts the application context against the same container and re-uses a previously captured session cookie.
+
+---
+
+## Deferred to Stage 3 — do not consider deployment done without this
+
+- [ ] שלב 3 (פריסה): לוודא שכתובת הלוגו מוחלטת/נכונה כשאין proxy.
+      LocalDiskLogoStorage מחזיר "/logos/{id}" יחסי. בדב זה עובד רק בזכות
+      ה-proxy של Vite. בפרודקשן, אם הפרונט והבקאנד על דומיינים נפרדים,
+      URL יחסי יצביע על דומיין הפרונט והתמונה תישבר — כולל בזרימת המייל
+      למבוטח בשלב 5. לתקן בעת החלפת האחסון המקומי באחסון ענן.
+
+---
+
+## Deferred — future stage (not yet assigned)
+
+- [ ] הודעות שגיאת לוגו ספציפיות לפי סיבה — דורש חוזה שגיאה יציב מהשרת
+      (קוד שגיאה מובנה, לא מחרוזת אנגלית חופשית), לא מיפוי טקסט שביר.
