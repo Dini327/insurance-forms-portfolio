@@ -84,11 +84,6 @@ public class PdfMapperApp {
                 for (PDField field : acroForm.getFieldTree()) {
                     String fieldId = field.getFullyQualifiedName();
 
-                    // Defensive check for malformed PDFs: PDFBox's standard API always creates widgets
-                    // when a field is added. This exception catches only corrupted PDFs where a field
-                    // has no widgets. Both migdal_health.pdf and migdal_life.pdf verified (2026-09-01)
-                    // to have 0 fields without widgets. This code path is not reachable through normal
-                    // PDFBox usage and is defensive-only.
                     if (field.getWidgets().isEmpty()) {
                         throw new IllegalStateException(
                                 "Field '" + fieldId + "' has no widgets — cannot determine its page or position.");
