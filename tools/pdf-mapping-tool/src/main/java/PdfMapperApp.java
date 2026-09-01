@@ -94,7 +94,7 @@ public class PdfMapperApp {
                                 "Field '" + fieldId + "' has no widgets — cannot determine its page or position.");
                     }
 
-                    String fieldType = field.getClass().getSimpleName().replace("PD", "");
+                    String fieldType = canonicalType(field);
                     int pageNum = getFieldPageNumber(doc, field);
                     float posX = getFieldPosX(field);
                     float posY = getFieldPosY(field);
@@ -151,5 +151,20 @@ public class PdfMapperApp {
             }
         }
         return 0.0f;
+    }
+
+    private static String canonicalType(PDField field) {
+        String raw = field.getClass().getSimpleName();
+        if (raw.equals("PDCheckBox") || raw.equals("PDRadioButton")) {
+            return "checkbox";
+        }
+        if (raw.equals("PDTextField")) {
+            return "text";
+        }
+        if (raw.equals("PDSignatureField")) {
+            return "signature";
+        }
+        throw new IllegalStateException(
+                "Unrecognized field type '" + raw + "' for field '" + field.getFullyQualifiedName() + "'");
     }
 }
