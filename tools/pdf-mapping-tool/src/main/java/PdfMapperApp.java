@@ -70,14 +70,25 @@ public class PdfMapperApp {
 
             PDAcroForm acroForm = doc.getDocumentCatalog().getAcroForm();
 
+            if (acroForm == null) {
+                throw new IllegalStateException(
+                        "No AcroForm in " + pdfFile.getName() + " \u2014 this PDF has no fillable fields at all.");
+            }
+
             writer.write('\uFEFF');
             writer.println("Field_ID,Field_Type,Page_Number,Position_X,Position_Y,Hebrew_Question_Label,Exclusion_Form_ID");
 
-            if (acroForm != null) {
+            {
                 List<FieldModel> fieldList = new ArrayList<>();
 
                 for (PDField field : acroForm.getFieldTree()) {
                     String fieldId = field.getFullyQualifiedName();
+
+                    if (field.getWidgets().isEmpty()) {
+                        throw new IllegalStateException(
+                                "Field '" + fieldId + "' has no widgets — cannot determine its page or position.");
+                    }
+
                     String fieldType = field.getClass().getSimpleName().replace("PD", "");
                     int pageNum = getFieldPageNumber(doc, field);
                     float posX = getFieldPosX(field);

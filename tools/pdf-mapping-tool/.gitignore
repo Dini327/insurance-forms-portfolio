@@ -1,2 +1,4 @@
 target/
 *.class
+input/
+output/
