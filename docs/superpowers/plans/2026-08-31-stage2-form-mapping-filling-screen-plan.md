@@ -700,11 +700,13 @@ private static String sha256Hex(File file) throws Exception {
 
 This is the counterpart to Step 4's negative control below: Step 4 proves a *tampered* file is correctly rejected; this step proves the *ordinary, untampered* case is correctly accepted despite the leading BOM every worksheet actually has (Task 5's writer always emits one). Without this check, a BOM-stripping bug could silently reject every real worksheet and nothing in the test suite would catch it — Step 4 alone would still pass, since a broken strip and a genuinely-mismatched hash both throw, just for different reasons.
 
-Run `buildSchema` against the real, unmodified `migdal_health.pdf` and its real worksheet from Task 5 (`tools/pdf-mapping-tool/output/migdal_health_mapped.csv`, which — like every worksheet this tool produces — starts with a UTF-8 BOM before `#SHA256:`):
+Run `buildSchema` against the real, unmodified `migdal_health.pdf` and its real worksheet from Task 5 (`tools/pdf-mapping-tool/output/migdal_health_mapped.csv`, which — like every worksheet this tool produces — starts with a UTF-8 BOM before `#SHA256:`).
+
+`buildSchema(File pdf, File worksheetCsv)` takes exactly two arguments — this task does not add page rendering, an output directory, or a form/company name (that's Task 8's job on top of this one). Add a temporary `main(String[] args)` that calls `buildSchema(new File(args[0]), new File(args[1]))` and prints the result size, same throwaway-verification pattern as Task 6, removed again before commit:
 
 ```bash
 mvn -f tools/pdf-mapping-tool/pom.xml compile exec:java -Dexec.mainClass=BuildSchema \
-  -Dexec.args="forms/migdal_health.pdf tools/pdf-mapping-tool/output/migdal_health_mapped.csv /tmp/positive-control-output migdal_health migdal 150"
+  -Dexec.args="forms/migdal_health.pdf tools/pdf-mapping-tool/output/migdal_health_mapped.csv"
 ```
 
 Expected: exits cleanly, no hash-mismatch exception — proving the BOM is stripped correctly and the hash comparison succeeds on the normal case, not just correctly fails on the tampered one.
