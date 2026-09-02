@@ -76,6 +76,7 @@ public class PdfMapperApp {
             }
 
             writer.write('\uFEFF');
+            writer.println("#SHA256:" + sha256Hex(pdfFile));
             writer.println("Field_ID,Field_Type,Page_Number,Position_X,Position_Y,Hebrew_Question_Label,Exclusion_Form_ID");
 
             {
@@ -151,6 +152,16 @@ public class PdfMapperApp {
             }
         }
         return 0.0f;
+    }
+
+    private static String sha256Hex(File file) throws Exception {
+        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(java.nio.file.Files.readAllBytes(file.toPath()));
+        StringBuilder hex = new StringBuilder();
+        for (byte b : hash) {
+            hex.append(String.format("%02x", b));
+        }
+        return hex.toString();
     }
 
     private static String canonicalType(PDField field) {
