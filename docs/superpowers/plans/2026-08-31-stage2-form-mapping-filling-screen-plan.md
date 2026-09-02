@@ -558,6 +558,12 @@ public class Worksheet {
 
     public static Worksheet load(File csv) throws Exception {
         String content = new String(Files.readAllBytes(csv.toPath()), StandardCharsets.UTF_8);
+        // Task 5's writer always emits a UTF-8 BOM (writer.write('﻿')) before the
+        // #SHA256 line — Java's UTF-8 decoding does not strip it automatically. Without
+        // this check, every normal, untampered worksheet has a first line that literally
+        // starts with "﻿#SHA256:...", so `startsWith("#SHA256:")` below would fail
+        // silently on every valid file, not just corrupted ones. Do not remove this as
+        // dead code — it is what makes the common case work at all.
         if (content.startsWith("﻿")) {
             content = content.substring(1);
         }
@@ -690,7 +696,20 @@ private static String sha256Hex(File file) throws Exception {
 
 (Add `import java.util.Set;`, `import java.util.TreeSet;`, `import java.util.stream.Collectors;` to the top of the file.)
 
-- [ ] **Step 2: Verify the mismatch case fails loudly**
+- [ ] **Step 2: Verify the positive case — a normal, BOM-prefixed worksheet still hash-matches**
+
+This is the counterpart to Step 4's negative control below: Step 4 proves a *tampered* file is correctly rejected; this step proves the *ordinary, untampered* case is correctly accepted despite the leading BOM every worksheet actually has (Task 5's writer always emits one). Without this check, a BOM-stripping bug could silently reject every real worksheet and nothing in the test suite would catch it — Step 4 alone would still pass, since a broken strip and a genuinely-mismatched hash both throw, just for different reasons.
+
+Run `buildSchema` against the real, unmodified `migdal_health.pdf` and its real worksheet from Task 5 (`tools/pdf-mapping-tool/output/migdal_health_mapped.csv`, which — like every worksheet this tool produces — starts with a UTF-8 BOM before `#SHA256:`):
+
+```bash
+mvn -f tools/pdf-mapping-tool/pom.xml compile exec:java -Dexec.mainClass=BuildSchema \
+  -Dexec.args="forms/migdal_health.pdf tools/pdf-mapping-tool/output/migdal_health_mapped.csv /tmp/positive-control-output migdal_health migdal 150"
+```
+
+Expected: exits cleanly, no hash-mismatch exception — proving the BOM is stripped correctly and the hash comparison succeeds on the normal case, not just correctly fails on the tampered one.
+
+- [ ] **Step 3: Verify the mismatch case fails loudly**
 
 Manually edit one field-id in a copy of `migdal_health`'s worksheet CSV (e.g. rename one row's field-id to `TYPO_FIELD`), then run `buildSchema` against it via a temporary `main`:
 
@@ -701,11 +720,11 @@ cp tools/pdf-mapping-tool/output/migdal_health_mapped.csv /tmp/broken_worksheet.
 
 Expected: `IllegalStateException` naming both `AptNumber` (missing from worksheet) and `AptNumberTypo` (missing from PDF).
 
-- [ ] **Step 3: Verify the hash-mismatch case fails loudly**
+- [ ] **Step 4: Verify the hash-mismatch case fails loudly**
 
 Copy `migdal_health.pdf`, flip one byte (e.g. append a byte with `printf '\0' >> copy.pdf`), and confirm `buildSchema` throws citing the hash mismatch before attempting any field extraction on the modified file.
 
-- [ ] **Step 4: Commit**
+- [ ] **Step 5: Commit**
 
 ```bash
 git add tools/pdf-mapping-tool/src/main/java/Worksheet.java tools/pdf-mapping-tool/src/main/java/BuildSchema.java
