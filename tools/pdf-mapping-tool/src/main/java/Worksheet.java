@@ -79,6 +79,15 @@ public class Worksheet {
                     i++;
                     continue;
                 }
+                // A hand-edited worksheet on Windows (Excel, Notepad) uses CRLF line
+                // endings, including inside a multi-line quoted field. Stripped here for
+                // the same reason it's stripped outside quotes below: without this, a
+                // label with an internal line break comes back with a literal embedded
+                // \r before every \n, which no downstream consumer expects.
+                if (c == '\r') {
+                    i++;
+                    continue;
+                }
                 field.append(c);
                 i++;
                 continue;
