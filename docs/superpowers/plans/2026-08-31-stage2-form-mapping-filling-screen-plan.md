@@ -860,7 +860,7 @@ Note: `rect` here is written in PDF points (the extracted `x/y/w/h`), *not* pre-
 
 ```java
 public static void main(String[] args) throws Exception {
-    if (args.length < 4) {
+    if (args.length < 5) {
         System.err.println("Usage: BuildSchema <pdf> <worksheet.csv> <outputDir> <formName> <company> [dpi]");
         System.exit(1);
     }
@@ -875,6 +875,19 @@ public static void main(String[] args) throws Exception {
     System.out.println("Wrote schema and " + args[3] + "'s page images to " + outputDir);
 }
 ```
+
+> **Deviation note (found before dispatch):** the original code block checked `args.length < 4`, but the method unconditionally reads `args[4]` (`company`) right after — five arguments (`pdf`, `worksheet`, `outputDir`, `formName`, `company`) are required, not four. With exactly 4 args, the flawed check would let execution past the usage message and into an `ArrayIndexOutOfBoundsException` instead. Corrected to `args.length < 5` above.
+
+- [ ] **Step 4b: Verify the rendered image's actual type, quality, and transparency handling — carried forward from Task 4**
+
+Task 4's WebP-writer spike (commit `0c5ee06`) only tested a small, synthetically-created, fully-opaque `TYPE_INT_RGB` image. It explicitly left two things for Task 8 to check for real, not assume: what `BufferedImage` type `PDFRenderer.renderImageWithDPI` actually returns for a real page at real dimensions, and whether transparency is silently dropped (CLAUDE.md warns `TYPE_INT_RGB` discards alpha — a defect that passes every automated test and only shows up by eye). This is separate from Task 9's later human sign-off on the final images: Task 9 confirms the pictures *look right*; this step confirms the *code* isn't quietly mishandling a channel that Task 9's eyeball check wouldn't necessarily catch on a form that happens to have no transparent content anyway.
+
+Using a temporary `main` (removed after, same pattern as Task 6/7): render at least one real page of `forms/migdal_health.pdf` at the real configured DPI (150) via `renderImageWithDPI`, and print:
+1. `image.getType()` — the actual `BufferedImage` type constant returned (e.g. `TYPE_INT_RGB` = 1, `TYPE_INT_ARGB` = 2).
+2. `image.getWidth()`/`image.getHeight()` — confirm these match the `w`/`h` math already used in `writeSchema`'s `pages` array for the same page (`mediaBox * dpi/72.0`, rounded).
+3. If the type has an alpha channel, scan the image (a simple pixel loop is fine — this is a one-off dev check, not production code) and report whether any pixel has alpha < 255. If the type has no alpha channel, state that explicitly instead of skipping the check silently.
+
+Report the three findings in the task report. If the type turns out to be alpha-less (e.g. `TYPE_INT_RGB`) and the page is a normal scanned/rendered form with no transparent content, no code change is needed — but this must be an observed, stated fact, not an assumption carried over from Task 4's synthetic-image spike.
 
 - [ ] **Step 5: Commit**
 
