@@ -358,6 +358,29 @@ git add tools/pdf-mapping-tool/src
 git commit -m "feat: record source PDF hash in worksheet for later drift detection"
 ```
 
+> **Deviation note (found during Task 7):** this task's own text ("produces...
+> followed by the existing header") took the relocated prototype's header as
+> a given and never checked it against the design doc. The design doc
+> (lines 294-301, 721-726) explicitly requires the worksheet to reserve
+> **both** `rule` and `exclusion-form-id` columns from stage 2 onward, blank
+> until stage 4 populates them — precisely so the CSV format never needs to
+> change shape again once the Client's exclusion-rules table exists. The
+> relocated prototype's original header (present since the very first
+> "import baseline unmodified" commit, i.e. predating any stage-2 work) only
+> ever had `Exclusion_Form_ID` — `Rule` was missing. Task 7's
+> `Worksheet.load` was written straight from the design doc's intent and
+> already assumes the 8-column layout (`label@5, rule@6, exclusion@7`); the
+> 7-column reality would have silently swapped `rule` and `exclusion` and
+> left `exclusionFormId` permanently null — invisible today only because
+> both columns are blank for `migdal_health`/`migdal_life` in this stage.
+> Fixed by adding the missing `Rule` column to `PdfMapperApp.java`'s header
+> and row-writer (separate commit on top of this one, not a rewrite of it),
+> and regenerating both worksheet skeletons. Verified: both worksheets show
+> 8 columns, Task 5's duplicate-field-id check still passes on the new
+> format, and a hand-edited row with `rule="true"` + a non-empty
+> `Exclusion_Form_ID` round-trips correctly through `Worksheet.load` — the
+> one parsing path that was never exercised while every real row was blank.
+
 ---
 
 ### Task 6: `build-schema` — per-widget extraction (rect, on-value, page dimensions)
