@@ -11,8 +11,58 @@ import org.apache.pdfbox.pdmodel.interactive.form.PDField;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
+import java.util.TreeSet;
+import java.util.stream.Collectors;
 
 public class BuildSchema {
+
+    public record SchemaFieldWithLabel(SchemaField field, String label, boolean rule, String exclusionFormId) {
+    }
+
+    public static List<SchemaFieldWithLabel> buildSchema(File pdfFile, File worksheetCsv) throws Exception {
+        Worksheet worksheet = Worksheet.load(worksheetCsv);
+
+        String actualHash = sha256Hex(pdfFile);
+        if (!actualHash.equals(worksheet.sha256())) {
+            throw new IllegalStateException(
+                    "PDF has changed since the worksheet was generated. Worksheet hash: "
+                            + worksheet.sha256() + ", actual PDF hash: " + actualHash
+                            + ". Re-generate the worksheet or confirm the change is intentional.");
+        }
+
+        List<SchemaField> extracted = extractFields(pdfFile);
+        Set<String> extractedFieldIds = extracted.stream().map(SchemaField::name).collect(Collectors.toSet());
+        Set<String> worksheetFieldIds = worksheet.rowsByFieldId().keySet();
+
+        Set<String> missingFromWorksheet = new TreeSet<>(extractedFieldIds);
+        missingFromWorksheet.removeAll(worksheetFieldIds);
+        Set<String> missingFromPdf = new TreeSet<>(worksheetFieldIds);
+        missingFromPdf.removeAll(extractedFieldIds);
+
+        if (!missingFromWorksheet.isEmpty() || !missingFromPdf.isEmpty()) {
+            throw new IllegalStateException(
+                    "Field-id mismatch between PDF and worksheet. In PDF but not worksheet: "
+                            + missingFromWorksheet + ". In worksheet but not PDF: " + missingFromPdf);
+        }
+
+        List<SchemaFieldWithLabel> result = new ArrayList<>();
+        for (SchemaField f : extracted) {
+            Worksheet.WorksheetRow row = worksheet.rowsByFieldId().get(f.name());
+            result.add(new SchemaFieldWithLabel(f, row.label(), row.rule(), row.exclusionFormId()));
+        }
+        return result;
+    }
+
+    private static String sha256Hex(File file) throws Exception {
+        java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+        byte[] hash = digest.digest(java.nio.file.Files.readAllBytes(file.toPath()));
+        StringBuilder hex = new StringBuilder();
+        for (byte b : hash) {
+            hex.append(String.format("%02x", b));
+        }
+        return hex.toString();
+    }
 
     public static List<SchemaField> extractFields(File pdfFile) throws Exception {
         try (PDDocument doc = Loader.loadPDF(pdfFile)) {
