@@ -1,3 +1,6 @@
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.apache.pdfbox.Loader;
 import org.apache.pdfbox.cos.COSDictionary;
 import org.apache.pdfbox.cos.COSName;
@@ -7,7 +10,10 @@ import org.apache.pdfbox.pdmodel.common.PDRectangle;
 import org.apache.pdfbox.pdmodel.interactive.annotation.PDAnnotationWidget;
 import org.apache.pdfbox.pdmodel.interactive.form.PDAcroForm;
 import org.apache.pdfbox.pdmodel.interactive.form.PDField;
+import org.apache.pdfbox.rendering.PDFRenderer;
 
+import javax.imageio.ImageIO;
+import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
@@ -133,5 +139,81 @@ public class BuildSchema {
             return "signature";
         }
         throw new IllegalStateException("Unrecognized field type '" + raw + "' for field '" + field.getFullyQualifiedName() + "'");
+    }
+
+    public static void renderPages(File pdfFile, File outputDir, String formName, int dpi) throws Exception {
+        try (PDDocument doc = Loader.loadPDF(pdfFile)) {
+            PDFRenderer renderer = new PDFRenderer(doc);
+            for (int i = 0; i < doc.getNumberOfPages(); i++) {
+                BufferedImage image = renderer.renderImageWithDPI(i, dpi);
+                File out = new File(outputDir, formName + "_p" + (i + 1) + ".webp");
+                boolean wrote = ImageIO.write(image, "webp", out);
+                if (!wrote) {
+                    throw new IllegalStateException("No WebP writer available for page " + (i + 1));
+                }
+            }
+        }
+    }
+
+    public static void writeSchema(File pdfFile, File worksheetCsv, File outputDir,
+                                    String formName, String company, int dpi) throws Exception {
+        List<SchemaFieldWithLabel> fields = buildSchema(pdfFile, worksheetCsv);
+
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode root = mapper.createObjectNode();
+        root.put("form", formName);
+        root.put("company", company);
+
+        ArrayNode pages = root.putArray("pages");
+        try (PDDocument doc = Loader.loadPDF(pdfFile)) {
+            for (int i = 0; i < doc.getNumberOfPages(); i++) {
+                PDRectangle mediaBox = doc.getPage(i).getMediaBox();
+                double scale = dpi / 72.0;
+                ObjectNode page = pages.addObject();
+                page.put("page", i + 1);
+                page.put("image", formName + "_p" + (i + 1) + ".webp");
+                page.put("w", (int) Math.round(mediaBox.getWidth() * scale));
+                page.put("h", (int) Math.round(mediaBox.getHeight() * scale));
+            }
+        }
+
+        ArrayNode fieldsNode = root.putArray("fields");
+        for (SchemaFieldWithLabel swl : fields) {
+            SchemaField f = swl.field();
+            ObjectNode node = fieldsNode.addObject();
+            node.put("name", f.name());
+            node.put("type", f.type());
+            if (f.on() != null) {
+                node.put("on", f.on());
+            }
+            node.put("page", f.page());
+            ArrayNode rect = node.putArray("rect");
+            rect.add(f.x()).add(f.y()).add(f.w()).add(f.h());
+            if (!swl.label().isBlank()) {
+                node.put("label", swl.label());
+            }
+            if (swl.rule()) {
+                node.put("rule", true);
+            }
+        }
+
+        mapper.writerWithDefaultPrettyPrinter().writeValue(new File(outputDir, formName + ".json"), root);
+        renderPages(pdfFile, outputDir, formName, dpi);
+    }
+
+    public static void main(String[] args) throws Exception {
+        if (args.length < 5) {
+            System.err.println("Usage: BuildSchema <pdf> <worksheet.csv> <outputDir> <formName> <company> [dpi]");
+            System.exit(1);
+        }
+        File pdf = new File(args[0]);
+        File worksheet = new File(args[1]);
+        File outputDir = new File(args[2]);
+        outputDir.mkdirs();
+        String formName = args[3];
+        String company = args[4];
+        int dpi = args.length > 5 ? Integer.parseInt(args[5]) : 150;
+        writeSchema(pdf, worksheet, outputDir, formName, company, dpi);
+        System.out.println("Wrote schema and " + args[3] + "'s page images to " + outputDir);
     }
 }
