@@ -902,6 +902,8 @@ git commit -m "feat: render WebP page images and write the final JSON schema"
 
 This task is mostly manual work, not code — the pass criteria are a human looking at output, per CLAUDE.md's "never claim something works until verified the way it will actually be used."
 
+**Deviation from Step 1/4 as written below:** the plan calls for a single wall-clock start/stop around manual CSV editing. In practice, the 251 labels + `On_Value_Meanings` were produced by an "AI draft + human correction" loop (controller generates a draft CSV from the real form images, the user corrects it in Excel over several sessions spanning days, with a meeting and other work in between) — not one continuous manual edit, so a literal wall-clock elapsed time would be meaningless. **Mapping time recorded (estimate, not measured):** the user's own estimate is **1.5 hours of effective correction work** against the controller's draft — explicitly an estimate, not a timed measurement, per her own characterization of the methodology above. For the next company's form, this will be measured upfront rather than estimated after the fact.
+
 **Files:**
 - Create: `tools/pdf-mapping-tool/worksheets/migdal_health_worksheet.csv` (generated, then hand-edited)
 - Create: `tools/pdf-mapping-tool/output/migdal_health.json` and `tools/pdf-mapping-tool/output/migdal_health_p{1,2,3}.webp` (generated)

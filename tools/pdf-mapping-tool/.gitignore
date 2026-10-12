@@ -1,4 +1,16 @@
 target/
 *.class
 input/
-output/
+
+# output/ holds both Phase A's committed final deliverables per CLAUDE.md (the
+# per-form schema JSON + page images, consumed by Task 12/stage-2 Phase B as
+# static content) and regenerable scratch (the *_mapped.csv worksheet skeleton).
+# Ignore everything in it except the final deliverables, by file type — not by
+# form name, so this keeps working unchanged for every future form.
+output/*
+!output/*.json
+!output/*.webp
+
+# review-draft/ is ReviewOverlay.java's scratch output (annotated review images) —
+# regenerate on demand, never committed.
+review-draft/
