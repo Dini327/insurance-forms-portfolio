@@ -77,7 +77,7 @@ public class PdfMapperApp {
 
             writer.write('\uFEFF');
             writer.println("#SHA256:" + sha256Hex(pdfFile));
-            writer.println("Field_ID,Field_Type,Page_Number,Position_X,Position_Y,Hebrew_Question_Label,Rule,Exclusion_Form_ID");
+            writer.println("Field_ID,Field_Type,Page_Number,Position_X,Position_Y,Hebrew_Question_Label,Rule,Exclusion_Form_ID,On_Value_Meanings");
 
             {
                 List<FieldModel> fieldList = new ArrayList<>();
@@ -113,7 +113,7 @@ public class PdfMapperApp {
                         .thenComparing((FieldModel f) -> f.posX, Comparator.reverseOrder()));
 
                 for (FieldModel f : fieldList) {
-                    writer.printf("\"%s\",\"%s\",\"%d\",\"%.1f\",\"%.1f\",\"\",\"\",\"\"\n",
+                    writer.printf("\"%s\",\"%s\",\"%d\",\"%.1f\",\"%.1f\",\"\",\"\",\"\",\"\"\n",
                             f.fieldId, f.fieldType, f.pageNum, f.posX, f.posY);
                 }
 

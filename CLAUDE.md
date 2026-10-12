@@ -39,6 +39,7 @@ The schema is the single source of truth. Format:
       "name": "H2Q13",
       "type": "checkbox",
       "on": "1",
+      "onMeaning": "כן",
       "page": 1,
       "rect": [x, y, w, h],
       "label": "שקדים",
@@ -51,6 +52,17 @@ The schema is the single source of truth. Format:
 - `name`, `type`, `on`, `rect`, `page` are extracted automatically from the PDF.
 - `on` is the checkbox's on-state value. **Read it from the PDF per field.**
   Never assume "Yes" or "On" — in the Harel form it is `"1"`.
+- `onMeaning` is what that on-value represents — not always "yes": for most
+  checkbox fields it's "כן"/"לא", but a field like a gender toggle has
+  `onMeaning` values like "זכר"/"נקבה" instead. It is **mandatory for every
+  field with 2 or more distinct on-values** — not every field with more than
+  one widget — and is read from the worksheet's `On_Value_Meanings` column,
+  never assumed or inferred from the raw on-value. A text field that simply
+  repeats in several places on the page (e.g. an agent's name printed in a
+  header and a footer) has multiple widgets but no on-value at all, so
+  `onMeaning` is not required for it. `build-schema` aborts, naming every
+  offending field, if a field with 2+ distinct on-values is missing it or if
+  it doesn't exactly match that field's real on-values.
 - `label` is added by hand, and only for fields that matter. It serves both the
   rules engine and accessibility.
 - `rule: true` marks fields that drive exclusion logic. Only these need a

@@ -17,13 +17,14 @@ import java.awt.image.BufferedImage;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 public class BuildSchema {
 
-    public record SchemaFieldWithLabel(SchemaField field, String label, boolean rule, String exclusionFormId) {
+    public record SchemaFieldWithLabel(SchemaField field, String label, boolean rule, String exclusionFormId, Map<String, String> onValueMeanings) {
     }
 
     public static List<SchemaFieldWithLabel> buildSchema(File pdfFile, File worksheetCsv) throws Exception {
@@ -52,12 +53,69 @@ public class BuildSchema {
                             + missingFromWorksheet + ". In worksheet but not PDF: " + missingFromPdf);
         }
 
+        Map<String, Set<String>> realOnValuesByFieldId = new java.util.HashMap<>();
+        for (SchemaField f : extracted) {
+            if (f.on() != null) {
+                realOnValuesByFieldId.computeIfAbsent(f.name(), k -> new TreeSet<>()).add(f.on());
+            }
+        }
+
+        List<String> onValueViolations = validateOnValueMeanings(realOnValuesByFieldId, worksheet.rowsByFieldId());
+        if (!onValueViolations.isEmpty()) {
+            throw new IllegalStateException("On_Value_Meanings validation failed. " + String.join(" ", onValueViolations));
+        }
+
         List<SchemaFieldWithLabel> result = new ArrayList<>();
         for (SchemaField f : extracted) {
             Worksheet.WorksheetRow row = worksheet.rowsByFieldId().get(f.name());
-            result.add(new SchemaFieldWithLabel(f, row.label(), row.rule(), row.exclusionFormId()));
+            result.add(new SchemaFieldWithLabel(f, row.label(), row.rule(), row.exclusionFormId(), row.onValueMeanings()));
         }
         return result;
+    }
+
+    // Gate on *distinct on-values*, not widget count. migdal_health.pdf has real
+    // multi-widget text fields (e.g. AgentName appears 4 times, SupervisorName 3
+    // times, FirstNameChild1-4 twice each — confirmed during Task 6) whose widgets
+    // never carry an on-value at all (SchemaField.on() is null for every text
+    // widget). Gating on widget count would demand an On_Value_Meanings mapping
+    // for those fields that could never satisfy the mismatch rule, since a
+    // non-empty mapping can never equal an empty real-value set. The only
+    // correct gate is realOnValuesByFieldId.get(fieldId).size() — the number of
+    // distinct on-values — which a Set naturally captures.
+    static List<String> validateOnValueMeanings(
+            Map<String, Set<String>> realOnValuesByFieldId,
+            Map<String, Worksheet.WorksheetRow> rowsByFieldId) {
+
+        List<String> missingMandatory = new ArrayList<>();
+        List<String> mismatched = new ArrayList<>();
+
+        for (String fieldId : rowsByFieldId.keySet()) {
+            Set<String> realValues = realOnValuesByFieldId.getOrDefault(fieldId, Set.of());
+            Map<String, String> meanings = rowsByFieldId.get(fieldId).onValueMeanings();
+
+            if (realValues.size() >= 2 && meanings.isEmpty()) {
+                missingMandatory.add(fieldId);
+                continue;
+            }
+            if (!meanings.isEmpty()) {
+                Set<String> worksheetKeys = new TreeSet<>(meanings.keySet());
+                Set<String> pdfValues = new TreeSet<>(realValues);
+                if (!worksheetKeys.equals(pdfValues)) {
+                    mismatched.add(fieldId + " (worksheet keys: " + worksheetKeys + ", PDF on-values: " + pdfValues + ")");
+                }
+            }
+        }
+
+        List<String> violations = new ArrayList<>();
+        if (!missingMandatory.isEmpty()) {
+            java.util.Collections.sort(missingMandatory);
+            violations.add("Missing On_Value_Meanings (mandatory — these fields have 2 or more distinct on-values): " + missingMandatory);
+        }
+        if (!mismatched.isEmpty()) {
+            java.util.Collections.sort(mismatched);
+            violations.add("On_Value_Meanings does not match the PDF's real on-values: " + mismatched);
+        }
+        return violations;
     }
 
     private static String sha256Hex(File file) throws Exception {
@@ -185,6 +243,10 @@ public class BuildSchema {
             node.put("type", f.type());
             if (f.on() != null) {
                 node.put("on", f.on());
+                String meaning = swl.onValueMeanings().get(f.on());
+                if (meaning != null) {
+                    node.put("onMeaning", meaning);
+                }
             }
             node.put("page", f.page());
             ArrayNode rect = node.putArray("rect");

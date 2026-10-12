@@ -6,7 +6,44 @@ import java.util.Map;
 
 public class Worksheet {
 
-    public record WorksheetRow(String label, boolean rule, String exclusionFormId) {
+    public record WorksheetRow(String label, boolean rule, String exclusionFormId, Map<String, String> onValueMeanings) {
+    }
+
+    // Package-private: the format is "on-value=meaning" pairs separated by ';',
+    // e.g. "1=כן;2=לא" or "True=זכר;False=נקבה". Blank input means "no mapping
+    // provided" — a valid, common state for fields with 0 or 1 distinct on-values
+    // (text fields, signature fields, single-widget checkboxes) — and returns an
+    // empty map, not an error. Anything else that doesn't parse throws loudly,
+    // consistent with this project's "fail loud, never silently default" rule:
+    // this method does not know which field it is parsing for, so callers that
+    // can identify the field (see load() below) must re-throw with that context.
+    static Map<String, String> parseOnValueMeanings(String raw) {
+        Map<String, String> result = new LinkedHashMap<>();
+        if (raw == null || raw.isBlank()) {
+            return result;
+        }
+        for (String pair : raw.split(";")) {
+            if (pair.isBlank()) {
+                continue;
+            }
+            int eq = pair.indexOf('=');
+            if (eq < 0) {
+                throw new IllegalStateException("Malformed On_Value_Meanings entry (missing '='): '" + pair + "'");
+            }
+            String key = pair.substring(0, eq).trim();
+            String value = pair.substring(eq + 1).trim();
+            if (key.isEmpty()) {
+                throw new IllegalStateException("Malformed On_Value_Meanings entry (empty on-value before '='): '" + pair + "'");
+            }
+            if (value.isEmpty()) {
+                throw new IllegalStateException("Malformed On_Value_Meanings entry (empty meaning after '='): '" + pair + "'");
+            }
+            if (result.containsKey(key)) {
+                throw new IllegalStateException("Duplicate on-value key in On_Value_Meanings: '" + key + "'");
+            }
+            result.put(key, value);
+        }
+        return result;
     }
 
     private final String sha256;
@@ -54,7 +91,14 @@ public class Worksheet {
             String label = row.get(5).trim();
             boolean rule = row.size() > 6 && "true".equalsIgnoreCase(row.get(6).trim());
             String exclusionFormId = row.size() > 7 && !row.get(7).isBlank() ? row.get(7).trim() : null;
-            rowsByFieldId.put(fieldId, new WorksheetRow(label, rule, exclusionFormId));
+            String onValueMeaningsRaw = row.size() > 8 ? row.get(8).trim() : "";
+            Map<String, String> onValueMeanings;
+            try {
+                onValueMeanings = parseOnValueMeanings(onValueMeaningsRaw);
+            } catch (IllegalStateException e) {
+                throw new IllegalStateException("Field '" + fieldId + "': " + e.getMessage(), e);
+            }
+            rowsByFieldId.put(fieldId, new WorksheetRow(label, rule, exclusionFormId, onValueMeanings));
         }
         return new Worksheet(sha256, rowsByFieldId);
     }
